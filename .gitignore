@@ -1,41 +1,100 @@
 # Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
 
-# dependencies
+# Dependencies
 node_modules/
+.pnp
+.pnp.js
 
 # Expo
 .expo/
+.expo-shared/
 dist/
 web-build/
 expo-env.d.ts
 
-# Native
+# Native & Prebuild Folders
+/ios/
+/android/
 .kotlin/
 *.orig.*
+
+# Android / iOS Keystores & Credentials
 *.jks
 *.p8
 *.p12
 *.key
+*.keystore
 *.mobileprovision
+*.pem
+*.cer
+*.der
+credentials.json
 
 # Metro
 .metro-health-check*
 
-# debug
+# Debug & Logs
+*.log
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+pnpm-debug.log*
 
-# macOS
-.DS_Store
-*.pem
+# Builds & Binaries
+*.apk
+*.aab
+*.ipa
 
-# local env files
+# Local Environment Files & Secrets
+.env
 .env*.local
+.env.development
+.env.staging
+.env.production
+!.env.example
 
-# typescript
+# Scratch & Temporary Dev Files
+scratch/
+
+# TypeScript & Test Coverage
 *.tsbuildinfo
+coverage/
+.nyc_output/
 
-# generated native folders
-/ios
-/android
+# OS-generated files
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
+
+# IDE & Editors
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.swo
+*~
+
+# AI & Workspace Customizations
+.agents/
+
+# Prototypes & Demos
+*_demo.html
+web_prototype/
+
+# Documentation, Bug Reports & Security Audits
+Guides/
+Bugs/
+Security_Audit/
+
+# Planning & Implementation Documents
+backend-implementation-plan.md
+implementation_plan.md
+
+
