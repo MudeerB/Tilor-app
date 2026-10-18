@@ -564,6 +564,7 @@ export const billingService = {
         totalAmount: Number(est.total_amount) || 0,
         timestamp: est.created_at,
         isDraft: Boolean(est.is_draft),
+        status: Boolean(est.is_draft) ? 'draft' : 'completed',
       }));
 
       // Merge with local estimates array if any exist offline
@@ -575,7 +576,7 @@ export const billingService = {
       if (singleDraft) {
         const parsed = JSON.parse(singleDraft);
         if (!localList.some(item => item.timestamp === parsed.timestamp)) {
-          localList.push({ ...parsed, isDraft: true });
+          localList.push({ ...parsed, isDraft: true, status: 'draft' });
         }
       }
 
@@ -603,23 +604,93 @@ export const billingService = {
       const grandTotalSqft = (estimateData.rooms || []).reduce((sum: number, r: any) => sum + (r.sqft || 0), 0);
       const grandTotalBoxes = (estimateData.rooms || []).reduce((sum: number, r: any) => sum + (r.boxes || 0), 0);
       const grandTotalAmount = (estimateData.rooms || []).reduce((sum: number, r: any) => sum + (r.totalAmount || 0), 0);
+      const isDraft = estimateData.isDraft !== undefined ? Boolean(estimateData.isDraft) : true;
 
-      // Save to Supabase
-      await supabase.from('estimates').insert({
-        shop_id: shopId,
-        project_name: estimateData.projectName || 'Untitled Project',
-        rooms_data: estimateData.rooms || [],
-        wastage_percent: estimateData.wastagePercent || 10,
-        total_sqft: grandTotalSqft,
-        total_boxes: grandTotalBoxes,
-        total_amount: grandTotalAmount,
-        is_draft: Boolean(estimateData.isDraft),
-      });
+      // 1. Sync to Supabase cloud
+      if (estimateData.dbId) {
+        await supabase.from('estimates').update({
+          project_name: estimateData.projectName || 'Untitled Project',
+          rooms_data: estimateData.rooms || [],
+          wastage_percent: estimateData.wastagePercent || 10,
+          total_sqft: grandTotalSqft,
+          total_boxes: grandTotalBoxes,
+          total_amount: grandTotalAmount,
+          is_draft: isDraft,
+        }).eq('id', estimateData.dbId);
+      } else if (!isDraft && estimateData.projectName) {
+        // When completing an estimate, check if a draft already exists in Supabase to update rather than duplicate
+        const { data: existingDraft } = await supabase
+          .from('estimates')
+          .select('id')
+          .eq('shop_id', shopId)
+          .eq('project_name', estimateData.projectName)
+          .eq('is_draft', true)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-      // Also update local storage array
+        if (existingDraft?.id) {
+          await supabase.from('estimates').update({
+            rooms_data: estimateData.rooms || [],
+            wastage_percent: estimateData.wastagePercent || 10,
+            total_sqft: grandTotalSqft,
+            total_boxes: grandTotalBoxes,
+            total_amount: grandTotalAmount,
+            is_draft: false,
+          }).eq('id', existingDraft.id);
+        } else {
+          await supabase.from('estimates').insert({
+            shop_id: shopId,
+            project_name: estimateData.projectName || 'Untitled Project',
+            rooms_data: estimateData.rooms || [],
+            wastage_percent: estimateData.wastagePercent || 10,
+            total_sqft: grandTotalSqft,
+            total_boxes: grandTotalBoxes,
+            total_amount: grandTotalAmount,
+            is_draft: false,
+          });
+        }
+      } else {
+        await supabase.from('estimates').insert({
+          shop_id: shopId,
+          project_name: estimateData.projectName || 'Untitled Project',
+          rooms_data: estimateData.rooms || [],
+          wastage_percent: estimateData.wastagePercent || 10,
+          total_sqft: grandTotalSqft,
+          total_boxes: grandTotalBoxes,
+          total_amount: grandTotalAmount,
+          is_draft: isDraft,
+        });
+      }
+
+      // 2. Also update local storage array
       const localStored = await AsyncStorage.getItem('tilor_all_estimates');
-      const list: any[] = localStored ? JSON.parse(localStored) : [];
-      list.unshift(estimateData);
+      let list: any[] = localStored ? JSON.parse(localStored) : [];
+
+      if (!isDraft) {
+        // Completed: remove from active local drafts storage
+        const isMatch = (item: any) => {
+          if (estimateData.dbId && (item.dbId === estimateData.dbId || item.id === estimateData.dbId)) return true;
+          if (estimateData.id && (item.id === estimateData.id || item.dbId === estimateData.id)) return true;
+          if (estimateData.timestamp && item.timestamp === estimateData.timestamp) return true;
+          if (item.projectName && estimateData.projectName && item.projectName.trim().toLowerCase() === estimateData.projectName.trim().toLowerCase()) return true;
+          return false;
+        };
+        list = list.filter((item: any) => !isMatch(item));
+      } else {
+        // Draft: update existing draft or prepend
+        const existingIdx = list.findIndex((item: any) =>
+          (estimateData.id && (item.id === estimateData.id || item.dbId === estimateData.id)) ||
+          (estimateData.timestamp && item.timestamp === estimateData.timestamp) ||
+          (item.projectName === estimateData.projectName && item.isDraft !== false)
+        );
+        const entry = { ...estimateData, isDraft: true, status: 'draft', totalAmount: grandTotalAmount, totalBoxes: grandTotalBoxes };
+        if (existingIdx >= 0) {
+          list[existingIdx] = entry;
+        } else {
+          list.unshift(entry);
+        }
+      }
       await AsyncStorage.setItem('tilor_all_estimates', JSON.stringify(list.slice(0, 50)));
 
       return true;
@@ -629,23 +700,63 @@ export const billingService = {
   },
 
   /**
-   * Deletes an estimate from Supabase or local storage array.
+   * Deletes an estimate from Supabase and all local storage keys.
    */
-  async deleteEstimate(dbId?: string, timestamp?: string): Promise<boolean> {
+  async deleteEstimate(
+    target: { dbId?: string; timestamp?: string; projectName?: string } | string | undefined,
+    legacyTimestamp?: string
+  ): Promise<boolean> {
+    const dbId = typeof target === 'string' ? target : target?.dbId;
+    const timestamp = typeof target === 'string' ? legacyTimestamp : target?.timestamp;
+    const projectName = typeof target === 'object' ? target?.projectName : undefined;
+
     try {
+      // 1. Delete from Supabase if dbId is present
       if (dbId) {
-        await supabase.from('estimates').delete().eq('id', dbId);
-      }
-      if (timestamp) {
-        const localStored = await AsyncStorage.getItem('tilor_all_estimates');
-        if (localStored) {
-          const list: any[] = JSON.parse(localStored);
-          const updated = list.filter(item => item.timestamp !== timestamp);
-          await AsyncStorage.setItem('tilor_all_estimates', JSON.stringify(updated));
+        const { error } = await supabase.from('estimates').delete().eq('id', dbId);
+        if (error) {
+          console.error('Failed to delete estimate from Supabase:', error);
         }
       }
+
+      // Helper matcher
+      const matchesTarget = (item: any) => {
+        if (!item) return false;
+        if (dbId && (item.dbId === dbId || item.id === dbId)) return true;
+        if (timestamp && item.timestamp === timestamp) return true;
+        if (projectName && item.projectName && item.projectName.trim().toLowerCase() === projectName.trim().toLowerCase()) return true;
+        return false;
+      };
+
+      // 2. Remove from tilor_all_estimates array
+      const localStored = await AsyncStorage.getItem('tilor_all_estimates');
+      if (localStored) {
+        const list: any[] = JSON.parse(localStored);
+        const updated = list.filter(item => !matchesTarget(item));
+        await AsyncStorage.setItem('tilor_all_estimates', JSON.stringify(updated));
+      }
+
+      // 3. Remove from tilor_current_draft if it matches
+      const currentDraftStr = await AsyncStorage.getItem('tilor_current_draft');
+      if (currentDraftStr) {
+        const currentDraft = JSON.parse(currentDraftStr);
+        if (matchesTarget(currentDraft)) {
+          await AsyncStorage.removeItem('tilor_current_draft');
+        }
+      }
+
+      // 4. Remove from tilor_saved_estimate if it matches
+      const savedEstStr = await AsyncStorage.getItem('tilor_saved_estimate');
+      if (savedEstStr) {
+        const savedEst = JSON.parse(savedEstStr);
+        if (matchesTarget(savedEst)) {
+          await AsyncStorage.removeItem('tilor_saved_estimate');
+        }
+      }
+
       return true;
-    } catch {
+    } catch (e) {
+      console.error('Error deleting estimate:', e);
       return false;
     }
   },

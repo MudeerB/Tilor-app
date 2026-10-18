@@ -20,6 +20,7 @@ import { BottomNavBar, NavTab } from '../components/BottomNavBar';
 import { UserSession } from '../services/storage';
 import { TileCollection, TileVariant, VariantType } from '../types/tiles';
 import { catalogService } from '../services/catalog';
+import { billingService } from '../services/billing';
 import { SEED_CATALOG } from '../data/seed-catalog';
 import { EstimatorSkeleton } from '../components/skeleton';
 import { hapticFeedback } from '../utils/haptics';
@@ -196,6 +197,11 @@ export const EstimatorScreen: React.FC<EstimatorScreenProps> = ({
   const [summaryOpen, setSummaryOpen]     = useState(true);
   const [wastagePercent, setWastagePercent] = useState<number>(10);
 
+  // Saved Estimates Modal & State
+  const [savedEstimatesModalVisible, setSavedEstimatesModalVisible] = useState(false);
+  const [savedEstimatesList, setSavedEstimatesList]                 = useState<any[]>([]);
+  const [currentEstimateId, setCurrentEstimateId]                   = useState<string | null>(null);
+
   // Bottom Sheet Modal states
   const [cushionModalVisible, setCushionModalVisible]     = useState(false);
   const [templatesModalVisible, setTemplatesModalVisible] = useState(false);
@@ -204,6 +210,16 @@ export const EstimatorScreen: React.FC<EstimatorScreenProps> = ({
   const [tileSearch, setTileSearch]                       = useState('');
   const [sizeFilter, setSizeFilter]                       = useState('all');
   const [clearModalVisible, setClearModalVisible]         = useState(false);
+
+  // Fetch saved estimates list for the modal
+  const fetchSavedEstimatesList = useCallback(async () => {
+    try {
+      const list = await billingService.fetchEstimates(session.shop_id);
+      setSavedEstimatesList(list);
+    } catch {
+      setSavedEstimatesList([]);
+    }
+  }, [session.shop_id]);
 
   // Load catalog & existing draft
   const loadData = useCallback(async () => {
@@ -224,16 +240,29 @@ export const EstimatorScreen: React.FC<EstimatorScreenProps> = ({
         if (parsed.projectName) setProjectName(parsed.projectName);
         if (parsed.rooms && Array.isArray(parsed.rooms)) setRooms(parsed.rooms);
         if (typeof parsed.wastagePercent === 'number') setWastagePercent(parsed.wastagePercent);
+        if (parsed.id || parsed.dbId) setCurrentEstimateId(parsed.id || parsed.dbId);
+      } else {
+        setProjectName('');
+        setRooms([]);
+        setWastagePercent(10);
+        setCurrentEstimateId(null);
       }
+
+      // 3. Fetch saved estimates list
+      fetchSavedEstimatesList();
     } catch (e) {
       console.error('Error fetching catalog/draft in EstimatorScreen:', e);
       setCatalog(SEED_CATALOG);
     } finally {
       setLoadingCatalog(false);
     }
-  }, []);
+  }, [session.shop_id, fetchSavedEstimatesList]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    if (activeTab === 'estimator') {
+      loadData();
+    }
+  }, [activeTab, loadData]);
 
   // Aggregate Stock Calculator
   const stockSummary = useMemo(() => {
@@ -618,17 +647,69 @@ export const EstimatorScreen: React.FC<EstimatorScreenProps> = ({
 
   // ─── Save & Proceed Handlers ───────────────────────────────────────────────
 
+  const handleLoadEstimate = (est: any) => {
+    if (est.isDraft === false || est.status === 'completed') {
+      Alert.alert('Locked Estimate', 'This estimate has already been converted into a completed invoice and cannot be edited.');
+      return;
+    }
+    hapticFeedback.success();
+    setProjectName(est.projectName || '');
+    setRooms(est.rooms || []);
+    setWastagePercent(typeof est.wastagePercent === 'number' ? est.wastagePercent : 10);
+    setCurrentEstimateId(est.dbId || est.id || null);
+    AsyncStorage.setItem(DRAFT_KEY, JSON.stringify(est));
+    setSavedEstimatesModalVisible(false);
+    Alert.alert('Estimate Loaded', `Loaded "${est.projectName || 'Estimate'}" into the editor.`);
+  };
+
+  const handleDeleteSavedEstimate = (est: any) => {
+    hapticFeedback.light();
+    Alert.alert(
+      'Delete Estimate?',
+      `Are you sure you want to delete "${est.projectName}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            await billingService.deleteEstimate({
+              dbId: est.dbId,
+              timestamp: est.timestamp,
+              projectName: est.projectName,
+            });
+            setSavedEstimatesList(prev => prev.filter(e => {
+              if (est.dbId && (e.dbId === est.dbId || e.id === est.dbId)) return false;
+              if (est.timestamp && e.timestamp === est.timestamp) return false;
+              if (est.projectName && e.projectName && e.projectName.trim().toLowerCase() === est.projectName.trim().toLowerCase()) return false;
+              return true;
+            }));
+            hapticFeedback.success();
+          }
+        }
+      ]
+    );
+  };
+
   const handleSaveDraft = async () => {
     const draftData = {
+      id: currentEstimateId || `est_${Date.now()}`,
       projectName: projectName || 'Untitled Project',
       rooms,
       wastagePercent,
+      totalSqft: grandTotalSqft,
+      totalBoxes: grandTotalBoxes,
+      totalAmount: grandTotalAmount,
       timestamp: new Date().toISOString(),
+      isDraft: true,
+      status: 'draft',
     };
     try {
       await AsyncStorage.setItem(DRAFT_KEY, JSON.stringify(draftData));
       await AsyncStorage.setItem(SAVED_ESTIMATE_KEY, JSON.stringify(draftData));
+      await billingService.saveEstimate(session.shop_id, draftData);
       hapticFeedback.success();
+      fetchSavedEstimatesList();
       Alert.alert('Draft Saved', 'Estimate saved successfully to your local drafts.');
     } catch {
       hapticFeedback.error();
@@ -676,10 +757,20 @@ export const EstimatorScreen: React.FC<EstimatorScreenProps> = ({
       }
     });
 
+    const isDbUuid = currentEstimateId && currentEstimateId.length > 20 && !currentEstimateId.startsWith('est_');
     const pendingBill = {
+      estimateId: currentEstimateId || `est_${Date.now()}`,
+      dbId: isDbUuid ? currentEstimateId : undefined,
       projectName: projectName || 'Untitled Estimate',
       rooms: billingRooms,
+      rawRooms: rooms,
+      wastagePercent,
+      totalSqft: grandTotalSqft,
+      totalBoxes: grandTotalBoxes,
+      totalAmount: grandTotalAmount,
       timestamp: new Date().toISOString(),
+      status: 'pending',
+      isDraft: true,
     };
 
     try {
@@ -822,6 +913,22 @@ export const EstimatorScreen: React.FC<EstimatorScreenProps> = ({
                 <Text style={styles.headerPillText}>Templates</Text>
                 <Feather name="chevron-down" size={12} color="#FFF" />
               </TouchableOpacity>
+
+              {/* Saved Estimates Dropdown Pill */}
+              <TouchableOpacity
+                style={styles.headerPill}
+                onPress={() => {
+                  fetchSavedEstimatesList();
+                  setSavedEstimatesModalVisible(true);
+                }}
+                activeOpacity={0.75}
+              >
+                <Feather name="folder" size={11} color="#FFF" />
+                <Text style={styles.headerPillText}>
+                  Saved ({savedEstimatesList.length})
+                </Text>
+                <Feather name="chevron-down" size={12} color="#FFF" />
+              </TouchableOpacity>
             </View>
 
             <View style={styles.headerGrandStat}>
@@ -889,10 +996,24 @@ export const EstimatorScreen: React.FC<EstimatorScreenProps> = ({
                   <Text style={styles.emptySub}>
                     Choose a preset template above or tap Add Room to calculate boxes.
                   </Text>
-                  <TouchableOpacity style={styles.emptyAddBtn} onPress={addCustomRoom} activeOpacity={0.7}>
-                    <Feather name="plus" size={14} color="#FFF" />
-                    <Text style={styles.emptyAddBtnText}>Add First Room</Text>
-                  </TouchableOpacity>
+                  <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+                    <TouchableOpacity style={styles.emptyAddBtn} onPress={addCustomRoom} activeOpacity={0.7}>
+                      <Feather name="plus" size={14} color="#FFF" />
+                      <Text style={styles.emptyAddBtnText}>Add First Room</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.emptyAddBtn, { backgroundColor: '#FAF5FF', borderWidth: 1, borderColor: '#DDD6FE' }]}
+                      onPress={() => {
+                        fetchSavedEstimatesList();
+                        setSavedEstimatesModalVisible(true);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Feather name="folder" size={14} color="#7C3AED" />
+                      <Text style={[styles.emptyAddBtnText, { color: '#7C3AED' }]}>Load Saved Estimate</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               )}
 
@@ -1450,6 +1571,127 @@ export const EstimatorScreen: React.FC<EstimatorScreenProps> = ({
                 <Text style={styles.confirmDeleteText}>Clear All</Text>
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 5. Modal Sheet: Saved Estimates / Drafts Loader */}
+      <Modal visible={savedEstimatesModalVisible} transparent animationType="slide" onRequestClose={() => setSavedEstimatesModalVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.sheetContent, { maxHeight: '80%' }]}>
+            <View style={styles.sheetHandle} />
+            <View style={styles.sheetHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Feather name="folder" size={18} color="#7C3AED" />
+                <Text style={styles.sheetTitle}>Saved Estimates &amp; Drafts</Text>
+              </View>
+              <TouchableOpacity onPress={() => setSavedEstimatesModalVisible(false)} style={styles.modalCloseBtn}>
+                <Feather name="x" size={18} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }}>
+              {savedEstimatesList.length === 0 ? (
+                <View style={{ padding: 36, alignItems: 'center' }}>
+                  <Feather name="inbox" size={36} color="#C4B5FD" />
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#1E293B', marginTop: 10 }}>No Saved Estimates Found</Text>
+                  <Text style={{ fontSize: 11, color: '#64748B', textAlign: 'center', marginTop: 4 }}>
+                    Estimates saved using "Save Draft" will appear here for 1-tap loading into the editor.
+                  </Text>
+                </View>
+              ) : (
+                <View style={{ gap: 10 }}>
+                  {savedEstimatesList.map((est, idx) => {
+                    const isCompleted = est.isDraft === false || est.status === 'completed';
+                    const estBoxes = est.totalBoxes || (est.rooms || []).reduce((s: number, r: any) => s + (r.boxes || 0), 0);
+                    const estAmount = est.totalAmount || (est.rooms || []).reduce((s: number, r: any) => s + (r.totalAmount || 0), 0);
+                    const dateStr = new Date(est.timestamp).toLocaleDateString('en-IN', {
+                      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                    });
+
+                    return (
+                      <View
+                        key={est.dbId || est.timestamp || idx}
+                        style={{
+                          backgroundColor: '#FFF',
+                          borderWidth: 1,
+                          borderColor: isCompleted ? '#E2E8F0' : '#DDD6FE',
+                          borderRadius: 14,
+                          padding: 12,
+                          gap: 8,
+                        }}
+                      >
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <View style={{ flex: 1, marginRight: 8 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                              <Text style={{ fontSize: 14, fontWeight: '800', color: '#0F172A' }}>
+                                {est.projectName || 'Untitled Project'}
+                              </Text>
+                              <View style={{
+                                backgroundColor: isCompleted ? '#DCFCE7' : '#FAF5FF',
+                                borderWidth: 1,
+                                borderColor: isCompleted ? '#86EFAC' : '#E9D5FF',
+                                paddingHorizontal: 6,
+                                paddingVertical: 2,
+                                borderRadius: 6,
+                              }}>
+                                <Text style={{
+                                  fontSize: 9,
+                                  fontWeight: '800',
+                                  color: isCompleted ? '#166534' : '#7C3AED',
+                                }}>
+                                  {isCompleted ? '✓ COMPLETED' : 'ACTIVE DRAFT'}
+                                </Text>
+                              </View>
+                            </View>
+                            <Text style={{ fontSize: 10, color: '#64748B', marginTop: 2 }}>{dateStr}</Text>
+                          </View>
+                          <View style={{ alignItems: 'flex-end' }}>
+                            <Text style={{ fontSize: 14, fontWeight: '800', color: '#7C3AED' }}>
+                              ₹{estAmount.toLocaleString('en-IN')}
+                            </Text>
+                            <Text style={{ fontSize: 10, color: '#64748B' }}>
+                              {estBoxes} boxes · {(est.rooms || []).length} rooms
+                            </Text>
+                          </View>
+                        </View>
+
+                        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#F1F5F9', alignItems: 'center' }}>
+                          {!isCompleted ? (
+                            <TouchableOpacity
+                              style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                gap: 4,
+                                backgroundColor: '#7C3AED',
+                                paddingHorizontal: 12,
+                                paddingVertical: 6,
+                                borderRadius: 8,
+                              }}
+                              onPress={() => handleLoadEstimate(est)}
+                            >
+                              <Feather name="upload" size={12} color="#FFF" />
+                              <Text style={{ fontSize: 11, fontWeight: '700', color: '#FFF' }}>Load into Editor</Text>
+                            </TouchableOpacity>
+                          ) : (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#F3F4F6', paddingHorizontal: 8, paddingVertical: 5, borderRadius: 6 }}>
+                              <Feather name="lock" size={10} color="#6B7280" />
+                              <Text style={{ fontSize: 10, fontWeight: '700', color: '#6B7280' }}>Billed &amp; Locked</Text>
+                            </View>
+                          )}
+                          <TouchableOpacity
+                            style={{ padding: 6 }}
+                            onPress={() => handleDeleteSavedEstimate(est)}
+                          >
+                            <Feather name="trash-2" size={13} color="#EF4444" />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+            </ScrollView>
           </View>
         </View>
       </Modal>

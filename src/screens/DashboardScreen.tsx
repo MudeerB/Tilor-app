@@ -438,7 +438,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
                     <View style={{ flex: 1 }}>
                       <Text style={styles.hubTitle}>Store Management Hub</Text>
                       <Text style={styles.hubDesc} numberOfLines={1}>
-                        Analytics, Stock Audit, and Operations Audit Trail
+                        Invoices, Analytics, Stock Audit, and Operations
                       </Text>
                     </View>
                   </View>
@@ -451,6 +451,21 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
 
                 {isHubExpanded && (
                   <View style={styles.hubDrawerGrid}>
+                    {/* Bills & Invoices History */}
+                    <TouchableOpacity
+                      style={styles.hubModuleCard}
+                      onPress={() => handleNav('history')}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[styles.hubModuleIcon, { backgroundColor: '#F5F3FF' }]}>
+                        <Feather name="file-text" size={16} color="#7C3AED" />
+                      </View>
+                      <View style={styles.hubModuleText}>
+                        <Text style={styles.hubModuleTitle}>Bills &amp; Invoices</Text>
+                        <Text style={styles.hubModuleDesc}>View &amp; re-share receipts</Text>
+                      </View>
+                    </TouchableOpacity>
+
                     {/* Sales Analytics */}
                     <TouchableOpacity
                       style={styles.hubModuleCard}

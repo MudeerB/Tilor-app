@@ -32,6 +32,7 @@ import {
   Modal,
   StatusBar,
   Alert,
+  FlatList,
   Platform,
   Share,
   ActivityIndicator,
@@ -165,6 +166,8 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedSearchQuery = useDebouncedValue(searchQuery, 150);
   const [searchFocused, setSearchFocused] = useState(false);
+  const [searchModalVisible, setSearchModalVisible] = useState(false);
+  const [sizeFilter, setSizeFilter] = useState('all');
 
   // Variant Picker Modal State for 12x18 Tiles
   const [variantPickerTile, setVariantPickerTile] = useState<TileCollection | null>(null);
@@ -205,12 +208,15 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
 
   // Catalog pre-fetch & initialization loading state
   const [isInitializing, setIsInitializing] = useState(true);
+  const lastLoadedEstimateTimestamp = useRef<string | null>(null);
 
   // ─── Data Loading ──────────────────────────────────────────────────────────
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (isInitial: boolean = false) => {
     try {
-      setIsInitializing(true);
+      if (isInitial && catalog.length === 0) {
+        setIsInitializing(true);
+      }
       // 1. Fetch Catalog from Supabase (scoped to current shop)
       const loadedCatalog = await catalogService.fetchCatalog(session.shop_id);
       setCatalog(loadedCatalog);
@@ -219,37 +225,42 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
       const pendingBillStr = await AsyncStorage.getItem(PENDING_BILL_KEY);
       if (pendingBillStr) {
         const parsed = JSON.parse(pendingBillStr);
-        setEstimateProjectName(parsed.projectName || 'Estimate');
+        // Only reload estimate if it's new/updated or if cart is empty
+        if (parsed.timestamp !== lastLoadedEstimateTimestamp.current || cart.length === 0) {
+          lastLoadedEstimateTimestamp.current = parsed.timestamp || null;
+          setEstimateProjectName(parsed.projectName || 'Estimate');
 
-        if (parsed.rooms && Array.isArray(parsed.rooms)) {
-          const items: CartItem[] = [];
-          parsed.rooms.forEach((r: any) => {
-            if (!r.selectedTile || !r.boxes || r.boxes <= 0) return;
-            const collection = loadedCatalog.find(t => t.id === r.selectedTile);
-            if (!collection) return;
-            const variant = collection.variants.find(v => v.type === r.variantType) || collection.variants[0];
+          if (parsed.rooms && Array.isArray(parsed.rooms)) {
+            const items: CartItem[] = [];
+            parsed.rooms.forEach((r: any, idx: number) => {
+              if (!r.selectedTile || !r.boxes || r.boxes <= 0) return;
+              const collection = loadedCatalog.find(t => t.id === r.selectedTile);
+              if (!collection) return;
+              const variant = collection.variants.find(v => v.type === r.variantType) || collection.variants[0];
 
-            items.push({
-              id: `${collection.id}_${variant.type}_${r.name || 'room'}_${Date.now()}`,
-              tileId: collection.id,
-              variantId: variant.id,
-              variantType: variant.type,
-              variantLabel: collection.is12x18 ? variant.label : undefined,
-              name: collection.name,
-              brand: collection.brand,
-              size: collection.size,
-              sqftPerBox: collection.sqftPerBox,
-              pricePerBox: r.pricePerBox || variant.pricePerBox,
-              color: variant.color,
-              accent: variant.accent,
-              boxes: r.boxes,
-              roomName: r.name,
+              items.push({
+                id: `${collection.id}_${variant.type}_${r.id || r.name || 'room'}_${idx}_${Date.now()}`,
+                tileId: collection.id,
+                variantId: variant.id,
+                variantType: variant.type,
+                variantLabel: collection.is12x18 ? variant.label : undefined,
+                name: collection.name,
+                brand: collection.brand,
+                size: collection.size,
+                sqftPerBox: collection.sqftPerBox,
+                pricePerBox: r.pricePerBox || variant.pricePerBox,
+                color: variant.color,
+                accent: variant.accent,
+                boxes: r.boxes,
+                roomName: r.name,
+              });
             });
-          });
-          setCart(items);
+            setCart(items);
+          }
         }
       } else {
         // Direct bill draft (Bug #14)
+        lastLoadedEstimateTimestamp.current = null;
         setEstimateProjectName(null);
         const directStr = await AsyncStorage.getItem(DIRECT_BILL_KEY);
         if (directStr) {
@@ -268,11 +279,13 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
     } finally {
       setIsInitializing(false);
     }
-  }, []);
+  }, [session.shop_id, catalog.length, cart.length]);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    if (activeTab === 'billing') {
+      loadData(cart.length === 0);
+    }
+  }, [activeTab, loadData]);
 
   // Bug #14: Persist direct cart draft automatically when cart updates
   const updateCartState = (newCart: CartItem[]) => {
@@ -283,8 +296,9 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
   };
 
   // Add tile from catalog search dropdown (Opens Variant Picker if 12x18 tile)
-  const handleAddTileToCart = (col: TileCollection, targetVariant?: TileVariant) => {
+  const handleAddTileToCart = (col: TileCollection, targetVariant?: TileVariant, keepSearchOpen = false) => {
     if (col.is12x18 && !targetVariant) {
+      setSearchModalVisible(false);
       setVariantPickerTile(col);
       return;
     }
@@ -316,9 +330,11 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
       updateCartState([...cart, newItem]);
     }
     hapticFeedback.light();
-    setSearchQuery('');
-    setSearchFocused(false);
-    setVariantPickerTile(null);
+    if (!keepSearchOpen) {
+      setSearchQuery('');
+      setSearchFocused(false);
+      setVariantPickerTile(null);
+    }
   };
 
   const updateCartQty = (index: number, delta: number) => {
@@ -333,6 +349,40 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
     updateCartState(updated);
   };
 
+  const handleSetCartItemBoxes = (index: number, text: string) => {
+    const updated = [...cart];
+    if (text === '') {
+      updated[index].boxes = 0;
+      updateCartState(updated);
+      return;
+    }
+    const parsed = parseInt(text.replace(/[^0-9]/g, ''), 10);
+    if (!isNaN(parsed)) {
+      const item = updated[index];
+      const col = catalog.find(c => c.id === item.tileId);
+      const variant = col?.variants.find(v => v.type === item.variantType) || col?.variants[0];
+
+      if (variant && parsed > variant.stock && variant.stock > 0) {
+        Alert.alert(
+          'Stock Limit Reached',
+          `Only ${variant.stock} boxes available in stock for ${item.name}.`
+        );
+        updated[index].boxes = variant.stock;
+      } else {
+        updated[index].boxes = parsed;
+      }
+      updateCartState(updated);
+    }
+  };
+
+  const handleBlurCartItemBoxes = (index: number) => {
+    const updated = [...cart];
+    if (updated[index] && (!updated[index].boxes || updated[index].boxes <= 0)) {
+      updated[index].boxes = 1;
+      updateCartState(updated);
+    }
+  };
+
   const removeCartItem = (index: number) => {
     hapticFeedback.light();
     const updated = [...cart];
@@ -341,6 +391,7 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
   };
 
   const handleClearCart = () => {
+    lastLoadedEstimateTimestamp.current = null;
     updateCartState([]);
     setEstimateProjectName(null);
     AsyncStorage.removeItem(PENDING_BILL_KEY);
@@ -406,17 +457,20 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
     };
   }, [cart, discount, isGst, creditDeposit]);
 
-  // Bug #12: Search Results with Price Range Display (Debounced)
+  // Search Results with Size Filter and Debounced Query
   const searchResults = useMemo(() => {
-    if (!debouncedSearchQuery.trim()) return [];
     const q = debouncedSearchQuery.toLowerCase().trim();
-    return catalog.filter(
-      t =>
+    return catalog.filter(t => {
+      const matchesText = !q || (
         t.name.toLowerCase().includes(q) ||
         t.brand.toLowerCase().includes(q) ||
         t.size.toLowerCase().includes(q)
-    );
-  }, [catalog, debouncedSearchQuery]);
+      );
+      const normalizedSize = t.size.replace('×', 'x');
+      const matchesSize = sizeFilter === 'all' || normalizedSize === sizeFilter;
+      return matchesText && matchesSize;
+    });
+  }, [catalog, debouncedSearchQuery, sizeFilter]);
 
   // ─── Finalize Invoice ───────────────────────────────────────────────────────
 
@@ -529,8 +583,33 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
         return;
       }
 
+      if (estimateProjectName) {
+        try {
+          const pendingBillStr = await AsyncStorage.getItem(PENDING_BILL_KEY);
+          const pendingData = pendingBillStr ? JSON.parse(pendingBillStr) : null;
+          await billingService.saveEstimate(session.shop_id, {
+            id: pendingData?.estimateId,
+            dbId: pendingData?.dbId,
+            projectName: estimateProjectName,
+            rooms: pendingData?.rawRooms || pendingData?.rooms || [],
+            wastagePercent: pendingData?.wastagePercent || 10,
+            totalSqft: pendingData?.totalSqft,
+            totalBoxes: pendingData?.totalBoxes,
+            totalAmount: pendingData?.totalAmount || res.invoiceRecord?.total,
+            timestamp: pendingData?.timestamp || new Date().toISOString(),
+            isDraft: false,
+            status: 'completed',
+          });
+          await AsyncStorage.removeItem('tilor_current_draft');
+          await AsyncStorage.removeItem('tilor_saved_estimate');
+        } catch (e) {
+          console.error('Failed to move completed estimate to cloud:', e);
+        }
+      }
+
       setCart([]);
       setEstimateProjectName(null);
+      lastLoadedEstimateTimestamp.current = null;
       await AsyncStorage.removeItem(PENDING_BILL_KEY);
       await AsyncStorage.removeItem(DIRECT_BILL_KEY);
 
@@ -538,10 +617,6 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
       setCheckoutVisible(false);
       setLastInvoice(res.invoiceRecord);
       setSuccessModalVisible(true);
-
-      setTimeout(() => {
-        handleShareOrPrintInvoice(res.invoiceRecord);
-      }, 300);
     } catch (err: any) {
       hapticFeedback.error();
       isSubmittingRef.current = false;
@@ -560,9 +635,9 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Header Banner */}
+        {/* Header Banner - Edge-to-Edge */}
         <LinearGradient
-          colors={['#6D28D9', '#7C3AED', '#A855F7']}
+          colors={['#5B21B6', '#6D28D9', '#7C3AED']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.header}
@@ -592,7 +667,7 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
 
             {/* Title Row */}
             <View style={styles.pageTitleRow}>
-              {estimateProjectName && (
+              {Boolean(estimateProjectName) && (
                 <TouchableOpacity
                   style={styles.backLink}
                   onPress={() => onTabChange('estimator')}
@@ -609,7 +684,7 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
                   <Text style={styles.pageTitle}>
                     {estimateProjectName ? 'Estimate Review' : 'Direct Billing'}
                   </Text>
-                  {estimateProjectName && (
+                  {Boolean(estimateProjectName) && (
                     <Text style={styles.linkedEstimateSub}>
                       Estimate: <Text style={{ color: '#FFF', fontWeight: 'bold' }}>{estimateProjectName}</Text>
                     </Text>
@@ -641,66 +716,50 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
           <BillingSkeleton />
         ) : (
           <View style={styles.innerContent}>
-            {/* Search Bar */}
-            <View style={styles.searchCard}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
-              <Text style={styles.cardSectionTitle}>Add Tiles to Cart</Text>
-              <Text style={styles.cardSectionSub}>Search Kajaria, Somany, etc.</Text>
-            </View>
-
-            <View style={styles.searchInputWrap}>
-              <Feather name="search" size={15} color="#A0AEC0" style={{ marginRight: 8 }} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Type tile name, brand, or size..."
-                placeholderTextColor="#A0AEC0"
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                onFocus={() => setSearchFocused(true)}
-              />
-              {searchQuery.length > 0 && (
-                <TouchableOpacity onPress={() => setSearchQuery('')}>
-                  <Feather name="x" size={14} color="#A0AEC0" />
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {/* Search Dropdown Results showing Variant Price Ranges */}
-            {searchQuery.trim().length > 0 && (
-              <View style={styles.searchDropdown}>
-                {searchResults.length === 0 ? (
-                  <View style={styles.emptySearch}>
-                    <Text style={{ fontSize: 11, color: '#A0AEC0' }}>No matching tiles found</Text>
-                  </View>
-                ) : (
-                  searchResults.map(tile => {
-                    const prices = tile.variants.map(v => v.pricePerBox);
-                    const minPrice = Math.min(...prices);
-                    const maxPrice = Math.max(...prices);
-                    const priceStr = minPrice === maxPrice ? `₹${minPrice}` : `₹${minPrice}-₹${maxPrice}`;
-
-                    return (
-                      <TouchableOpacity
-                        key={tile.id}
-                        style={styles.searchResultItem}
-                        onPress={() => handleAddTileToCart(tile)}
-                        activeOpacity={0.7}
-                      >
-                        <View style={[styles.tileSwatchSmall, { backgroundColor: tile.variants[0]?.color || '#7C3AED' }]} />
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.tileResultName}>
-                            {tile.name} <Text style={styles.tileResultBrand}>({tile.brand})</Text>
-                          </Text>
-                          <Text style={styles.tileResultSpecs}>{tile.size} · {tile.sqftPerBox} sqft/box</Text>
-                        </View>
-                        <Text style={styles.tileResultPrice}>{priceStr}/bx</Text>
-                      </TouchableOpacity>
-                    );
-                  })
-                )}
+            {/* Mobile-Friendly Search Trigger Card */}
+            <TouchableOpacity
+              style={styles.searchCard}
+              activeOpacity={0.88}
+              onPress={() => setSearchModalVisible(true)}
+            >
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8, alignItems: 'center' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Feather name="search" size={14} color="#7C3AED" />
+                  <Text style={styles.cardSectionTitle}>Add Tiles to Cart</Text>
+                </View>
+                <View style={styles.searchPillBadge}>
+                  <Text style={styles.searchPillBadgeText}>{catalog.length} Products</Text>
+                </View>
               </View>
-            )}
-          </View>
+
+              <View style={styles.searchInputWrap}>
+                <Feather name="search" size={15} color="#A0AEC0" style={{ marginRight: 8 }} />
+                <Text style={styles.searchFakeInputText} numberOfLines={1}>
+                  {searchQuery.trim() ? searchQuery : "Search tile name, brand, or size..."}
+                </Text>
+                <View style={styles.searchFilterIconWrap}>
+                  <Feather name="sliders" size={12} color="#7C3AED" />
+                </View>
+              </View>
+
+              {/* Quick Size Filter Pills on Main Screen */}
+              <View style={styles.filterChipsRowInline}>
+                {['all', '12x18', '2x2', '2x4'].map(sz => (
+                  <TouchableOpacity
+                    key={sz}
+                    style={[styles.sizeChipSmall, sizeFilter === sz && styles.sizeChipSmallActive]}
+                    onPress={() => {
+                      setSizeFilter(sz);
+                      setSearchModalVisible(true);
+                    }}
+                  >
+                    <Text style={[styles.sizeChipTextSmall, sizeFilter === sz && styles.sizeChipTextSmallActive]}>
+                      {sz === 'all' ? 'All Sizes' : sz}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </TouchableOpacity>
 
           {/* Cart Header */}
           <View style={styles.cartHeaderRow}>
@@ -733,7 +792,7 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
                     <View style={{ flex: 1 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                         <Text style={styles.cartItemName}>{item.name}</Text>
-                        {item.variantLabel && (
+                        {Boolean(item.variantLabel) && (
                           <View style={{ backgroundColor: '#EDE9FE', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 }}>
                             <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#6D28D9' }}>{item.variantLabel}</Text>
                           </View>
@@ -762,7 +821,18 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
                       >
                         <Feather name="minus" size={12} color="#6B7280" />
                       </TouchableOpacity>
-                      <Text style={styles.qtyText}>{item.boxes} bx</Text>
+                      <View style={styles.qtyInputContainer}>
+                        <TextInput
+                          style={styles.qtyInput}
+                          value={item.boxes === 0 ? '' : item.boxes.toString()}
+                          onChangeText={(text) => handleSetCartItemBoxes(idx, text)}
+                          onBlur={() => handleBlurCartItemBoxes(idx)}
+                          keyboardType="number-pad"
+                          selectTextOnFocus
+                          maxLength={5}
+                        />
+                        <Text style={styles.qtyUnitLabel}>bx</Text>
+                      </View>
                       <TouchableOpacity
                         style={styles.qtyBtn}
                         onPress={() => updateCartQty(idx, 1)}
@@ -970,7 +1040,7 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 460 }} keyboardShouldPersistTaps="handled">
-              {checkoutError && (
+              {Boolean(checkoutError) && (
                 <View style={styles.checkoutErrorBanner}>
                   <Feather name="alert-triangle" size={14} color="#EF4444" />
                   <Text style={styles.checkoutErrorText}>{checkoutError}</Text>
@@ -1002,7 +1072,7 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
                       value={custPhone}
                       onChangeText={(t) => { handlePhoneChange(t); if (checkoutError) setCheckoutError(null); }}
                     />
-                    {phoneMatched && (
+                    {Boolean(phoneMatched) && (
                       <Feather name="check-circle" size={16} color="#22C55E" />
                     )}
                   </View>
@@ -1235,6 +1305,158 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
           </View>
         </View>
       </Modal>
+
+      {/* ── Mobile-First Product Search Modal ── */}
+      <Modal
+        visible={searchModalVisible}
+        animationType="slide"
+        onRequestClose={() => setSearchModalVisible(false)}
+      >
+        <SafeAreaView style={styles.searchModalContainer} edges={['top', 'bottom']}>
+          {/* Pinned Search Header */}
+          <View style={styles.searchModalHeader}>
+            <TouchableOpacity
+              onPress={() => setSearchModalVisible(false)}
+              style={styles.searchModalBackBtn}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Feather name="arrow-left" size={20} color="#1E293B" />
+            </TouchableOpacity>
+
+            <View style={styles.searchModalInputWrap}>
+              <Feather name="search" size={16} color="#7C3AED" style={{ marginRight: 8 }} />
+              <TextInput
+                style={styles.searchModalInput}
+                placeholder="Search tile name, brand, or size..."
+                placeholderTextColor="#94A3B8"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                autoFocus
+                returnKeyType="search"
+                clearButtonMode="while-editing"
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchQuery('')} style={{ padding: 4 }}>
+                  <Feather name="x-circle" size={16} color="#94A3B8" />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+
+          {/* Size Filter Pills Bar */}
+          <View style={styles.searchModalFilterBar}>
+            <Text style={styles.filterBarLabel}>Filter by Size:</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterChipsScroll}>
+              {['all', '12x18', '2x2', '2x4'].map(sz => (
+                <TouchableOpacity
+                  key={sz}
+                  style={[styles.sizeChip, sizeFilter === sz && styles.sizeChipActive]}
+                  onPress={() => setSizeFilter(sz)}
+                >
+                  <Text style={[styles.sizeChipText, sizeFilter === sz && styles.sizeChipTextActive]}>
+                    {sz === 'all' ? 'All Sizes' : sz}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+
+          {/* Search Results FlatList */}
+          <FlatList
+            data={searchResults}
+            keyExtractor={item => item.id}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            contentContainerStyle={styles.searchResultsContainer}
+            ListEmptyComponent={
+              <View style={styles.searchEmptyContainer}>
+                <Feather name="inbox" size={40} color="#CBD5E1" />
+                <Text style={styles.searchEmptyTitle}>No matching tiles found</Text>
+                <Text style={styles.searchEmptySub}>Try a different keyword or select "All Sizes"</Text>
+              </View>
+            }
+            renderItem={({ item: tile }) => {
+              const inCartCount = cart
+                .filter(c => c.tileId === tile.id)
+                .reduce((sum, c) => sum + c.boxes, 0);
+
+              const prices = tile.variants.map(v => v.pricePerBox);
+              const minPrice = Math.min(...prices);
+              const maxPrice = Math.max(...prices);
+              const priceStr = minPrice === maxPrice ? `₹${minPrice}` : `₹${minPrice} - ₹${maxPrice}`;
+
+              const totalStock = tile.is12x18
+                ? tile.variants.reduce((sum, v) => sum + v.stock, 0)
+                : tile.variants[0]?.stock || 0;
+
+              return (
+                <TouchableOpacity
+                  style={[styles.tileCardModal, inCartCount > 0 && styles.tileCardModalInCart]}
+                  activeOpacity={0.75}
+                  onPress={() => handleAddTileToCart(tile, undefined, true)}
+                >
+                  <View style={[styles.tileSwatchLarge, { backgroundColor: tile.variants[0]?.color || '#7C3AED' }]} />
+
+                  <View style={{ flex: 1, marginRight: 8 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <Text style={styles.tileCardModalName}>{tile.name}</Text>
+                      <View style={styles.tileBrandBadge}>
+                        <Text style={styles.tileBrandBadgeText}>{tile.brand}</Text>
+                      </View>
+                    </View>
+
+                    <Text style={styles.tileCardModalSpecs}>
+                      {tile.size} · {tile.sqftPerBox} sqft/box
+                    </Text>
+
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                      <Text style={[styles.stockStatusText, totalStock === 0 && { color: '#EF4444' }]}>
+                        {totalStock > 0 ? `📦 In Stock: ${totalStock} bx` : '⚠️ Out of Stock'}
+                      </Text>
+                      {tile.is12x18 && (
+                        <View style={styles.multiVariantBadge}>
+                          <Text style={styles.multiVariantBadgeText}>3 Variants</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+
+                  <View style={{ alignItems: 'flex-end', justifyContent: 'space-between' }}>
+                    <Text style={styles.tileCardModalPrice}>{priceStr}/bx</Text>
+
+                    {inCartCount > 0 ? (
+                      <View style={styles.inCartIndicator}>
+                        <Feather name="check" size={11} color="#166534" />
+                        <Text style={styles.inCartIndicatorText}>{inCartCount} in cart</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.addBtnModal}>
+                        <Feather name="plus" size={13} color="#FFF" />
+                        <Text style={styles.addBtnModalText}>Add</Text>
+                      </View>
+                    )}
+                  </View>
+                </TouchableOpacity>
+              );
+            }}
+          />
+
+          {/* Sticky Bottom Bar Showing Cart Overview */}
+          <View style={styles.searchModalFooter}>
+            <View>
+              <Text style={styles.footerCartLabel}>Cart Total ({cart.length} items)</Text>
+              <Text style={styles.footerCartAmount}>₹{rawSubtotal.toLocaleString('en-IN')}</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.doneSearchBtn}
+              onPress={() => setSearchModalVisible(false)}
+            >
+              <Text style={styles.doneSearchBtnText}>View Cart ({cart.reduce((s, i) => s + i.boxes, 0)} boxes)</Text>
+              <Feather name="arrow-right" size={14} color="#FFF" />
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </Modal>
     </View>
   );
 };
@@ -1243,23 +1465,23 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8F6FF' },
-  header: { borderBottomLeftRadius: 32, borderBottomRightRadius: 32 },
-  safeHeader: { paddingHorizontal: 20, paddingBottom: 20 },
-  appBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12 },
+  header: { borderBottomLeftRadius: 28, borderBottomRightRadius: 28, paddingBottom: 20 },
+  safeHeader: { paddingHorizontal: 20 },
+  appBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10 },
   logoRow: { flexDirection: 'row', alignItems: 'center' },
-  logoIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', marginRight: 10 },
-  logoText: { fontSize: 20, fontWeight: 'bold', color: '#FFF', letterSpacing: -0.5 },
+  logoIcon: { width: 34, height: 34, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', marginRight: 9 },
+  logoText: { fontSize: 20, fontWeight: '800', color: '#FFF', letterSpacing: -0.5 },
   logoDot: { color: '#C084FC' },
   appBarRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  roleBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12 },
-  roleIndicator: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#4CAF50', marginRight: 6 },
-  roleText: { color: '#FFF', fontSize: 9, fontWeight: 'bold', letterSpacing: 0.5 },
-  logoutBtn: { width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
-  pageTitleRow: { marginTop: 8 },
+  roleBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.16)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
+  roleIndicator: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#4ADE80', marginRight: 6 },
+  roleText: { color: '#FFF', fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
+  logoutBtn: { width: 34, height: 34, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
+  pageTitleRow: { marginTop: 12 },
   backLink: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 },
   backLinkText: { fontSize: 11, color: '#D8B4FE', fontWeight: '600' },
-  pageSubtitle: { fontSize: 10, color: 'rgba(255,255,255,0.6)', fontWeight: 'bold', letterSpacing: 1.2 },
-  pageTitle: { fontSize: 22, fontWeight: '800', color: '#FFF', marginTop: 2 },
+  pageSubtitle: { fontSize: 11, color: '#DDD6FE', fontWeight: '700', letterSpacing: 1.2 },
+  pageTitle: { fontSize: 24, fontWeight: '800', color: '#FFF', marginTop: 4 },
   linkedEstimateSub: { fontSize: 11, color: '#D8B4FE', marginTop: 2 },
   modeBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   modeBadgeLinked: { backgroundColor: 'rgba(255,255,255,0.25)' },
@@ -1268,8 +1490,8 @@ const styles = StyleSheet.create({
   modeBadgeTextLinked: { color: '#FFF' },
   modeBadgeTextAdhoc: { color: '#E9D5FF' },
   scrollView: { flex: 1 },
-  scrollContent: { paddingBottom: 8 },
-  innerContent: { paddingHorizontal: 16, paddingTop: 12 },
+  scrollContent: { paddingBottom: 48 },
+  innerContent: { paddingHorizontal: 16, paddingTop: 14 },
   searchCard: { backgroundColor: '#FFF', borderRadius: 20, padding: 14, borderWidth: 1, borderColor: '#F3E8FF', marginBottom: 16, boxShadow: '0px 2px 8px rgba(0,0,0,0.04)' },
   cardSectionTitle: { fontSize: 13, fontWeight: 'bold', color: '#1A1A2E' },
   cardSectionSub: { fontSize: 10, color: '#A0AEC0' },
@@ -1389,4 +1611,61 @@ const styles = StyleSheet.create({
   shareBtnText: { color: '#7C3AED', fontWeight: 'bold', fontSize: 13 },
   doneBtn: { flex: 1, backgroundColor: '#7C3AED', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
   doneBtnText: { color: '#FFF', fontWeight: 'bold', fontSize: 13 },
+
+  // Mobile-Friendly Search Trigger Bar
+  searchFakeInputText: { flex: 1, fontSize: 13, color: '#94A3B8', fontWeight: '500' },
+  searchPillBadge: { backgroundColor: '#F3E8FF', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12 },
+  searchPillBadgeText: { fontSize: 10, fontWeight: '700', color: '#7C3AED' },
+  searchFilterIconWrap: { width: 26, height: 26, borderRadius: 13, backgroundColor: '#FAF5FF', alignItems: 'center', justifyContent: 'center' },
+  filterChipsRowInline: { flexDirection: 'row', gap: 6, marginTop: 10 },
+  sizeChipSmall: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0' },
+  sizeChipSmallActive: { backgroundColor: '#7C3AED', borderColor: '#7C3AED' },
+  sizeChipTextSmall: { fontSize: 11, fontWeight: '700', color: '#64748B' },
+  sizeChipTextSmallActive: { color: '#FFF' },
+
+  // Mobile-First Search Modal
+  searchModalContainer: { flex: 1, backgroundColor: '#F8FAFC' },
+  searchModalHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#FFF', borderBottomWidth: 1, borderBottomColor: '#F1F5F9', gap: 10 },
+  searchModalBackBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center' },
+  searchModalInputWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderWidth: 1.5, borderColor: '#DDD6FE', borderRadius: 12, paddingHorizontal: 12, height: 42 },
+  searchModalInput: { flex: 1, fontSize: 14, color: '#0F172A', fontWeight: '500', padding: 0 },
+  searchModalFilterBar: { paddingHorizontal: 16, paddingVertical: 10, backgroundColor: '#FFF', borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  filterBarLabel: { fontSize: 11, fontWeight: '700', color: '#64748B', marginBottom: 6 },
+  filterChipsScroll: { flexDirection: 'row', gap: 8, paddingRight: 16 },
+  sizeChip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 10, backgroundColor: '#F1F5F9', borderWidth: 1, borderColor: '#E2E8F0' },
+  sizeChipActive: { backgroundColor: '#7C3AED', borderColor: '#7C3AED' },
+  sizeChipText: { fontSize: 12, fontWeight: '700', color: '#475569' },
+  sizeChipTextActive: { color: '#FFF' },
+
+  searchResultsContainer: { padding: 16, gap: 12, paddingBottom: 100 },
+  searchEmptyContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: 48, gap: 8 },
+  searchEmptyTitle: { fontSize: 15, fontWeight: '700', color: '#334155' },
+  searchEmptySub: { fontSize: 12, color: '#94A3B8', textAlign: 'center', maxWidth: 260 },
+
+  tileCardModal: { flexDirection: 'row', backgroundColor: '#FFF', borderRadius: 16, padding: 12, borderWidth: 1, borderColor: '#E2E8F0', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 3, elevation: 1 },
+  tileCardModalInCart: { borderColor: '#86EFAC', backgroundColor: '#F0FDF4' },
+  tileSwatchLarge: { width: 44, height: 44, borderRadius: 10, marginRight: 12 },
+  tileCardModalName: { fontSize: 14, fontWeight: '800', color: '#0F172A' },
+  tileBrandBadge: { backgroundColor: '#F1F5F9', paddingHorizontal: 6, paddingVertical: 1.5, borderRadius: 4 },
+  tileBrandBadgeText: { fontSize: 9, fontWeight: '700', color: '#475569' },
+  tileCardModalSpecs: { fontSize: 11, color: '#64748B', marginTop: 2 },
+  stockStatusText: { fontSize: 10, fontWeight: '700', color: '#16A34A' },
+  multiVariantBadge: { backgroundColor: '#EDE9FE', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 },
+  multiVariantBadgeText: { fontSize: 9, fontWeight: '700', color: '#7C3AED' },
+  tileCardModalPrice: { fontSize: 14, fontWeight: '800', color: '#7C3AED' },
+  inCartIndicator: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#DCFCE7', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, marginTop: 6 },
+  inCartIndicatorText: { fontSize: 10, fontWeight: '800', color: '#166534' },
+  addBtnModal: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#7C3AED', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 8, marginTop: 6 },
+  addBtnModalText: { fontSize: 11, fontWeight: '700', color: '#FFF' },
+
+  searchModalFooter: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#FFF', borderTopWidth: 1, borderTopColor: '#E2E8F0', paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 4 },
+  footerCartLabel: { fontSize: 11, color: '#64748B', fontWeight: '600' },
+  footerCartAmount: { fontSize: 17, fontWeight: '800', color: '#0F172A' },
+  doneSearchBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#7C3AED', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12 },
+  doneSearchBtnText: { fontSize: 13, fontWeight: '700', color: '#FFF' },
+
+  // Direct Quantity Input in Cart
+  qtyInputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2, minWidth: 64, justifyContent: 'center' },
+  qtyInput: { fontSize: 13, fontWeight: '800', color: '#0F172A', textAlign: 'center', minWidth: 26, padding: 0 },
+  qtyUnitLabel: { fontSize: 11, fontWeight: '600', color: '#64748B', marginLeft: 2 },
 });

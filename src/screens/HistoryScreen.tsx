@@ -39,6 +39,7 @@ interface SavedEstimate {
   totalAmount?: number;
   timestamp: string;
   isDraft?: boolean;
+  status?: 'draft' | 'completed';
 }
 
 interface InvoiceItem {
@@ -185,10 +186,12 @@ const EstimateTimelineCard = React.memo<EstimateTimelineCardProps>(({
     month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
   });
 
+  const isCompleted = est.isDraft === false || est.status === 'completed';
+
   return (
     <View style={styles.timelineItem}>
-      <View style={[styles.timelineNode, est.isDraft ? styles.nodeDraft : styles.nodeSaved]}>
-        <Feather name="file" size={10} color="#FFF" />
+      <View style={[styles.timelineNode, !isCompleted ? styles.nodeDraft : styles.nodeSaved]}>
+        <Feather name={isCompleted ? "check-circle" : "file"} size={10} color="#FFF" />
       </View>
 
       <View style={styles.itemContentCard}>
@@ -196,9 +199,9 @@ const EstimateTimelineCard = React.memo<EstimateTimelineCardProps>(({
           <View style={{ flex: 1 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
               <Text style={styles.itemTitle}>{est.projectName}</Text>
-              <View style={est.isDraft ? styles.badgeDraft : styles.badgeSaved}>
-                <Text style={est.isDraft ? styles.badgeDraftText : styles.badgeSavedText}>
-                  {est.isDraft ? 'Active Draft' : 'Saved'}
+              <View style={isCompleted ? [styles.badgeSaved, { backgroundColor: '#DCFCE7', borderColor: '#86EFAC' }] : styles.badgeDraft}>
+                <Text style={isCompleted ? [styles.badgeSavedText, { color: '#166534', fontWeight: '800' }] : styles.badgeDraftText}>
+                  {isCompleted ? '✓ Completed (Billed)' : 'Active Draft'}
                 </Text>
               </View>
             </View>
@@ -214,13 +217,20 @@ const EstimateTimelineCard = React.memo<EstimateTimelineCardProps>(({
           <Text style={styles.roomsText} numberOfLines={1}>
             <Feather name="home" size={10} /> {roomNames || 'No rooms added'}
           </Text>
-          <View style={{ flexDirection: 'row', gap: 6 }}>
-            <TouchableOpacity
-              style={styles.itemEditBtn}
-              onPress={() => onEditDraft(est)}
-            >
-              <Text style={styles.itemEditBtnText}>Edit Draft</Text>
-            </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+            {!isCompleted ? (
+              <TouchableOpacity
+                style={styles.itemEditBtn}
+                onPress={() => onEditDraft(est)}
+              >
+                <Text style={styles.itemEditBtnText}>Edit Draft</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#F3F4F6', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 }}>
+                <Feather name="lock" size={11} color="#6B7280" />
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#6B7280' }}>Billed (Locked)</Text>
+              </View>
+            )}
             <TouchableOpacity
               style={styles.itemDeleteBtn}
               onPress={() => onDeleteDraft(est)}
@@ -288,13 +298,13 @@ const InvoiceTimelineCard = React.memo<InvoiceTimelineCardProps>(({
                   </Text>
                 </View>
               )}
-              {inv.loadingStatus && inv.loadingStatus !== 'not_required' && !inv.isVoided && (
+              {inv.loadingStatus && inv.loadingStatus !== 'not_required' && !inv.isVoided ? (
                 <View style={[styles.payBadge, { backgroundColor: inv.loadingStatus === 'pending' ? '#FEF08A' : inv.loadingStatus === 'partial' ? '#FED7AA' : '#BBF7D0' }]}>
                   <Text style={[styles.payBadgeText, { color: inv.loadingStatus === 'pending' ? '#854D0E' : inv.loadingStatus === 'partial' ? '#9A3412' : '#166534' }]}>
                     {inv.loadingStatus.toUpperCase() === 'PENDING' ? 'PENDING LOADING' : inv.loadingStatus.toUpperCase() === 'PARTIAL' ? 'PARTIALLY LOADED' : 'FULLY LOADED'}
                   </Text>
                 </View>
-              )}
+              ) : null}
               {isOverdue && !inv.isVoided && (
                 <View style={styles.overdueBadge}>
                   <Text style={styles.overdueBadgeText}>OVERDUE</Text>
@@ -302,7 +312,7 @@ const InvoiceTimelineCard = React.memo<InvoiceTimelineCardProps>(({
               )}
             </View>
             <Text style={styles.itemMetaDate}>{dateStr} · ID: {inv.invoiceId}</Text>
-            {inv.createdByName && (
+            {Boolean(inv.createdByName) && (
               <Text style={[styles.itemMetaDate, { color: '#8B5CF6', marginTop: 2 }]}>
                 Created by: {inv.createdByName}
               </Text>
@@ -354,14 +364,14 @@ const InvoiceTimelineCard = React.memo<InvoiceTimelineCardProps>(({
                 <Text style={styles.repayBtnText}>Repay Debt</Text>
               </TouchableOpacity>
             )}
-            {!inv.isVoided && inv.loadingStatus && inv.loadingStatus !== 'not_required' && inv.loadingStatus !== 'completed' && (
+            {!inv.isVoided && inv.loadingStatus && inv.loadingStatus !== 'not_required' && inv.loadingStatus !== 'completed' ? (
               <TouchableOpacity
                 style={[styles.viewBillBtn, { backgroundColor: '#F3F4F6' }]}
                 onPress={() => onOpenDispatch(inv)}
               >
                 <Text style={[styles.viewBillBtnText, { color: '#6D28D9' }]}>Record Loading</Text>
               </TouchableOpacity>
-            )}
+            ) : null}
             <TouchableOpacity
               style={styles.viewBillBtn}
               onPress={() => onOpenDetails(inv)}
@@ -436,8 +446,10 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
   }, [session.shop_id]);
 
   useEffect(() => {
-    loadHistory();
-  }, [loadHistory]);
+    if (activeTab === 'history') {
+      loadHistory();
+    }
+  }, [activeTab, loadHistory]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -446,6 +458,10 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
 
   // Restore estimate to draft state and navigate to Estimator
   const handleEditDraft = useCallback(async (estimate: SavedEstimate) => {
+    if (estimate.isDraft === false || estimate.status === 'completed') {
+      Alert.alert('Locked Estimate', 'This estimate has already been converted into a completed invoice and cannot be edited.');
+      return;
+    }
     hapticFeedback.light();
     try {
       await AsyncStorage.setItem(DRAFT_KEY, JSON.stringify(estimate));
@@ -459,7 +475,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
   const handleDeleteDraft = useCallback((estimate: SavedEstimate) => {
     hapticFeedback.light();
     Alert.alert(
-      'Delete Estimate Draft?',
+      'Delete Estimate?',
       `Are you sure you want to delete "${estimate.projectName}"?`,
       [
         { text: 'Cancel', style: 'cancel' },
@@ -467,8 +483,23 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
-            await billingService.deleteEstimate(estimate.dbId, estimate.timestamp);
-            setEstimates(prev => prev.filter(e => e.timestamp !== estimate.timestamp));
+            const success = await billingService.deleteEstimate({
+              dbId: estimate.dbId,
+              timestamp: estimate.timestamp,
+              projectName: estimate.projectName,
+            });
+            if (success) {
+              setEstimates(prev => prev.filter(e => {
+                if (estimate.dbId && (e.dbId === estimate.dbId || (e as any).id === estimate.dbId)) return false;
+                if (estimate.timestamp && e.timestamp === estimate.timestamp) return false;
+                if (estimate.projectName && e.projectName && e.projectName.trim().toLowerCase() === estimate.projectName.trim().toLowerCase()) return false;
+                return true;
+              }));
+              hapticFeedback.success();
+            } else {
+              hapticFeedback.error();
+              Alert.alert('Error', 'Failed to delete estimate.');
+            }
           },
         },
       ]
@@ -1135,7 +1166,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
               <Text style={styles.invModalDate}>
                 Date: {selectedInvoice ? new Date(selectedInvoice.date).toLocaleDateString('en-IN') : ''}
               </Text>
-              {selectedInvoice?.isVoided && (
+              {Boolean(selectedInvoice?.isVoided) && (
                 <View style={[styles.voidedBadge, { marginTop: 6 }]}>
                   <Text style={styles.voidedBadgeText}>VOIDED / CANCELLED</Text>
                 </View>
@@ -1164,16 +1195,16 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
                     <View style={{ flex: 1 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                         <Text style={styles.itemName}>{item.name}</Text>
-                        {item.variantLabel && (
+                        {Boolean(item.variantLabel) && (
                           <View style={{ backgroundColor: '#EDE9FE', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 }}>
                             <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#6D28D9' }}>{item.variantLabel}</Text>
                           </View>
                         )}
                       </View>
-                      <Text style={styles.itemBrandSpec}>{item.brand} · {item.size}</Text>
+                      <Text style={styles.itemBrandSpec}>{[item.brand, item.size].filter(Boolean).join(' · ')}</Text>
                     </View>
                     <Text style={styles.itemQtyPrice}>{item.boxes} boxes × ₹{item.pricePerBox}</Text>
-                    <Text style={styles.itemTotalVal}>₹{item.total.toLocaleString('en-IN')}</Text>
+                    <Text style={styles.itemTotalVal}>₹{(item.total || 0).toLocaleString('en-IN')}</Text>
                   </View>
                 ))}
               </View>
@@ -1218,13 +1249,13 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
               )}
               <View style={styles.summaryItem}><Text style={styles.summaryLabel}>Payment Method:</Text><Text style={styles.summaryValHighlight}>{selectedInvoice?.paymentMethod?.toUpperCase()}</Text></View>
 
-              {selectedInvoice?.paymentMethod === 'credit' && selectedInvoice.creditDetail && (
+              {selectedInvoice && selectedInvoice.paymentMethod === 'credit' && selectedInvoice.creditDetail ? (
                 <View style={styles.creditDetailPanel}>
                   <View style={styles.summaryItem}><Text style={styles.creditPanelLabel}>Paid Deposit:</Text><Text style={styles.creditPanelVal}>₹{selectedInvoice.creditDetail.depositPaid.toLocaleString('en-IN')}</Text></View>
                   <View style={styles.summaryItem}><Text style={styles.creditPanelLabel}>Ledger Outstanding:</Text><Text style={styles.creditPanelDebtVal}>₹{selectedInvoice.creditDetail.debt.toLocaleString('en-IN')}</Text></View>
                   <View style={styles.summaryItem}><Text style={styles.creditPanelLabel}>Due Date:</Text><Text style={styles.creditPanelVal}>{selectedInvoice.creditDetail.dueDate}</Text></View>
                 </View>
-              )}
+              ) : null}
 
               <View style={styles.grandDivider} />
 

@@ -235,7 +235,7 @@ export const ActivityLogScreen: React.FC<ActivityLogScreenProps> = ({ session, o
 
     return (
       <LinearGradient
-        colors={['#6D28D9', '#7C3AED', '#A855F7']}
+        colors={['#5B21B6', '#6D28D9', '#7C3AED']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.header}
@@ -338,9 +338,11 @@ export const ActivityLogScreen: React.FC<ActivityLogScreenProps> = ({ session, o
       {/* List */}
       <View style={styles.innerContent}>
         {loading ? (
-          <ScrollView showsVerticalScrollIndicator={false}>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.listContent}>
             {renderHeader()}
-            <ActivityLogSkeleton />
+            <View style={{ paddingHorizontal: 16, paddingTop: 14 }}>
+              <ActivityLogSkeleton />
+            </View>
           </ScrollView>
         ) : (
           <FlatList
@@ -386,18 +388,19 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8F6FF',
   },
   header: {
-    borderBottomLeftRadius: 32,
-    borderBottomRightRadius: 32,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    paddingBottom: 20,
+    marginBottom: 14,
   },
   safeHeader: {
     paddingHorizontal: 20,
-    paddingBottom: 20,
   },
   appBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 10,
   },
   backBtn: {
     flexDirection: 'row',
@@ -405,9 +408,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   backIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 34,
+    height: 34,
+    borderRadius: 10,
     backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
@@ -420,53 +423,53 @@ const styles = StyleSheet.create({
   roleBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: 'rgba(255,255,255,0.16)',
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingVertical: 5,
     borderRadius: 12,
   },
   roleIndicator: {
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#4ADE80',
     marginRight: 6,
   },
   roleText: {
     color: '#FFF',
-    fontSize: 9,
-    fontWeight: 'bold',
+    fontSize: 10,
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   pageTitleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-end',
-    marginTop: 12,
+    marginTop: 14,
     marginBottom: 16,
   },
   countBadge: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: 'rgba(255,255,255,0.18)',
     paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 20,
+    paddingVertical: 5,
+    borderRadius: 12,
   },
   countBadgeText: {
     color: '#FFF',
-    fontSize: 10,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '700',
   },
   pageSubtitle: {
-    fontSize: 10,
-    color: 'rgba(255,255,255,0.6)',
-    fontWeight: 'bold',
+    fontSize: 11,
+    color: '#DDD6FE',
+    fontWeight: '700',
     letterSpacing: 1.2,
   },
   pageTitle: {
     fontSize: 24,
     fontWeight: '800',
     color: '#FFF',
-    marginTop: 2,
+    marginTop: 4,
   },
   searchContainer: {
     flexDirection: 'row',
@@ -516,10 +519,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   listContent: {
-    padding: 16,
-    paddingTop: 16,
     paddingBottom: 48,
-    gap: 12,
   },
   logCard: {
     flexDirection: 'row',
@@ -528,6 +528,8 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#F3E8FF',
+    marginHorizontal: 16,
+    marginBottom: 12,
     boxShadow: '0px 2px 10px rgba(124, 58, 237, 0.04)',
   },
   iconContainer: {
@@ -572,7 +574,14 @@ const styles = StyleSheet.create({
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: 60,
+    paddingVertical: 40,
+    paddingHorizontal: 20,
+    marginHorizontal: 16,
+    backgroundColor: '#FFF',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#F3E8FF',
+    marginTop: 8,
   },
   emptyIconBox: {
     width: 64,
@@ -592,11 +601,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 16,
+    paddingVertical: 14,
     paddingHorizontal: 20,
     backgroundColor: '#FFF',
-    borderTopWidth: 1,
-    borderTopColor: '#F3E8FF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#F3E8FF',
+    marginHorizontal: 16,
+    marginTop: 4,
+    marginBottom: 16,
   },
   pageButton: {
     width: 40,

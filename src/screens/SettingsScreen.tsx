@@ -239,9 +239,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
+        {/* Header Banner - Edge-to-Edge */}
         <LinearGradient
-          colors={['#6D28D9', '#7C3AED', '#A855F7']}
+          colors={['#5B21B6', '#6D28D9', '#7C3AED']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.header}
@@ -298,6 +298,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </View>
           </SafeAreaView>
         </LinearGradient>
+
+        {/* Main Content Area */}
+        <View style={styles.innerContent}>
 
         {/* ═══════════════════════════════════════════════════════════════════ */}
         {/* 1. ACCOUNT & CREDENTIALS                                            */}
@@ -493,6 +496,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         <Text style={styles.footerNote}>
           Tilor · Shop Estimator &amp; Billing Suite{'\n'}Made with ♥ for tile merchants &amp; warehouse teams
         </Text>
+
+        <View style={{ height: 28 }} />
+      </View>
       </ScrollView>
 
       <BottomNavBar
@@ -512,14 +518,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8F6FF' },
-  header: { borderBottomLeftRadius: 32, borderBottomRightRadius: 32 },
-  safeHeader: { paddingHorizontal: 20, paddingBottom: 24 },
-  appBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12 },
+  header: { borderBottomLeftRadius: 28, borderBottomRightRadius: 28, paddingBottom: 20 },
+  safeHeader: { paddingHorizontal: 20 },
+  appBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10 },
   logoRow: { flexDirection: 'row', alignItems: 'center' },
-  logoIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', marginRight: 10 },
-  logoText: { fontSize: 20, fontWeight: 'bold', color: '#FFF', letterSpacing: -0.5 },
+  logoIcon: { width: 34, height: 34, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', marginRight: 9 },
+  logoText: { fontSize: 20, fontWeight: '800', color: '#FFF', letterSpacing: -0.5 },
   logoDot: { color: '#C084FC' },
-  headerRightBadge: { backgroundColor: 'rgba(255,255,255,0.18)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  headerRightBadge: { backgroundColor: 'rgba(255,255,255,0.18)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
   headerRightText: { fontSize: 10, fontWeight: '800', color: '#FFF', letterSpacing: 0.8 },
 
   // Profile Hero
@@ -536,7 +542,8 @@ const styles = StyleSheet.create({
   shopPillText: { fontSize: 10, color: '#E9D5FF', fontWeight: '600' },
 
   scrollView: { flex: 1 },
-  scrollContent: { padding: 16, paddingBottom: 56 },
+  scrollContent: { paddingBottom: 56 },
+  innerContent: { paddingHorizontal: 16, paddingTop: 14 },
   sectionHeader: { fontSize: 11, fontWeight: '800', color: '#7C3AED', letterSpacing: 1.2, marginTop: 22, marginBottom: 8, marginLeft: 4 },
 
   // Cards & Rows

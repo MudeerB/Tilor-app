@@ -18,7 +18,7 @@
  * 12. Lightweight, auto-dismissing in-app Toast banner for operation feedback.
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -216,10 +216,16 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
   const [loading, setLoading]                         = useState(true);
   const [search, setSearch]                           = useState('');
   const debouncedSearch = useDebouncedValue(search, 200);
-  const [activeBrand, setActiveBrand]                 = useState('all');
+  const [activeSize, setActiveSize]                   = useState('all');
+  const [currentPage, setCurrentPage]                 = useState(1);
+  const PAGE_SIZE = 10;
   const [selectedTile, setSelectedTile]               = useState<TileCollection | null>(null);
   const [selectedVariantType, setSelectedVariantType] = useState<VariantType>('light');
   const [adjustTab, setAdjustTab]                     = useState<AdjustTab>('inward');
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, activeSize]);
 
   // Input states & errors
   const [inwardQty, setInwardQty]                     = useState('10');
@@ -320,20 +326,55 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
   // ─── Derived Computations ──────────────────────────────────────────────────
 
-  const brands = ['all', ...Array.from(new Set(catalog.map(t => t.brand)))];
+  const normalizeSize = (s: string) => (s || '').replace(/x/gi, '×').replace(/\*/g, '×').trim();
 
-  const filtered = catalog.filter(t => {
-    const matchesBrand = activeBrand === 'all' || t.brand === activeBrand;
+  const sizes = useMemo(() => {
+    const rawSizes = Array.from(new Set(catalog.map(t => normalizeSize(t.size || '')))).filter(Boolean);
+    const standardOrder = ['12×18', '2×2', '2×4', '1×4'];
+    const sorted = [
+      ...standardOrder.filter(s => rawSizes.includes(s)),
+      ...rawSizes.filter(s => !standardOrder.includes(s)),
+    ];
+    const finalSizes = sorted.length > 0 ? sorted : ['12×18', '2×2', '2×4'];
+    return ['all', ...finalSizes];
+  }, [catalog]);
+
+  const filteredAndSorted = useMemo(() => {
     const q = debouncedSearch.toLowerCase().trim();
-    const matchesSearch =
-      !q ||
-      t.name.toLowerCase().includes(q) ||
-      t.brand.toLowerCase().includes(q) ||
-      t.size.toLowerCase().includes(q) ||
-      t.id.toLowerCase().includes(q) ||
-      t.variants.some(v => v.label.toLowerCase().includes(q) || v.type.toLowerCase().includes(q));
-    return matchesBrand && matchesSearch;
-  });
+    const list = catalog.filter(t => {
+      const norm = normalizeSize(t.size);
+      const matchesSize = activeSize === 'all' || norm === normalizeSize(activeSize);
+      const matchesSearch =
+        !q ||
+        t.name.toLowerCase().includes(q) ||
+        t.brand.toLowerCase().includes(q) ||
+        t.size.toLowerCase().includes(q) ||
+        t.id.toLowerCase().includes(q) ||
+        t.variants.some(v => v.label.toLowerCase().includes(q) || v.type.toLowerCase().includes(q));
+      return matchesSize && matchesSearch;
+    });
+
+    // Sort by size (12×18 -> 2×2 -> 2×4 -> others), then by name
+    const sizePriority: Record<string, number> = {
+      '12×18': 1,
+      '2×2': 2,
+      '2×4': 3,
+      '1×4': 4,
+    };
+
+    return list.sort((a, b) => {
+      const pA = sizePriority[normalizeSize(a.size)] || 99;
+      const pB = sizePriority[normalizeSize(b.size)] || 99;
+      if (pA !== pB) return pA - pB;
+      return a.name.localeCompare(b.name);
+    });
+  }, [catalog, activeSize, debouncedSearch]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredAndSorted.length / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedProducts = useMemo(() => {
+    return filteredAndSorted.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  }, [filteredAndSorted, safePage]);
 
   const totalBoxes = catalog.reduce(
     (sum, t) => sum + t.variants.reduce((vs, v) => vs + (v.stock || 0), 0),
@@ -635,9 +676,9 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-      {/* Header */}
+      {/* Header Banner - Edge-to-Edge */}
       <LinearGradient
-        colors={['#6D28D9', '#7C3AED', '#A855F7']}
+        colors={['#5B21B6', '#6D28D9', '#7C3AED']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.header}
@@ -686,6 +727,9 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
           </View>
         </SafeAreaView>
       </LinearGradient>
+
+      {/* Main Operational Content */}
+      <View style={styles.innerContent}>
         {/* Feature #1: KPI Cards with Low Stock Threshold Note */}
         {loading ? (
           <InventoryStatsSkeleton />
@@ -728,17 +772,20 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
           )}
         </View>
 
-        {/* Brand Filter Chips */}
+        {/* Size Filter & Sort Chips */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsRow} contentContainerStyle={styles.chipsContent}>
-          {brands.map(brand => (
+          {sizes.map(sz => (
             <TouchableOpacity
-              key={brand}
-              style={[styles.chip, activeBrand === brand && styles.chipActive]}
-              onPress={() => setActiveBrand(brand)}
+              key={sz}
+              style={[styles.chip, activeSize === sz && styles.chipActive]}
+              onPress={() => {
+                hapticFeedback.selection();
+                setActiveSize(sz);
+              }}
               activeOpacity={0.7}
             >
-              <Text style={[styles.chipText, activeBrand === brand && styles.chipTextActive]}>
-                {brand === 'all' ? 'All Brands' : brand}
+              <Text style={[styles.chipText, activeSize === sz && styles.chipTextActive]}>
+                {sz === 'all' ? 'All Sizes' : sz}
               </Text>
             </TouchableOpacity>
           ))}
@@ -752,7 +799,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
             <SkeletonCard />
             <SkeletonCard />
           </View>
-        ) : filtered.length === 0 ? (
+        ) : filteredAndSorted.length === 0 ? (
           /* Feature #7: Differentiated Empty States */
           <View style={styles.emptyState}>
             <Feather name="archive" size={36} color="#C4B5FD" />
@@ -765,13 +812,13 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
               <>
                 <Text style={styles.emptyTitle}>No matching tiles found</Text>
                 <Text style={styles.emptySub}>
-                  No products matched "{search || activeBrand}". Clear search or try another brand filter.
+                  No products matched "{search || activeSize}". Clear search or select another size.
                 </Text>
                 <TouchableOpacity
                   style={styles.clearFilterBtn}
                   onPress={() => {
                     setSearch('');
-                    setActiveBrand('all');
+                    setActiveSize('all');
                   }}
                 >
                   <Feather name="refresh-cw" size={12} color="#7C3AED" />
@@ -781,17 +828,62 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
             )}
           </View>
         ) : (
-          <View style={styles.tileGrid}>
-            {filtered.map(tile => (
-              <TileCard
-                key={tile.id}
-                tile={tile}
-                onPress={handleTilePress}
-                onQuickInward={handleTileQuickInward}
-              />
-            ))}
-          </View>
+          <>
+            <View style={styles.tileGrid}>
+              {paginatedProducts.map(tile => (
+                <TileCard
+                  key={tile.id}
+                  tile={tile}
+                  onPress={handleTilePress}
+                  onQuickInward={handleTileQuickInward}
+                />
+              ))}
+            </View>
+
+            {/* Feature: Product Pagination (10 per page) */}
+            {totalPages > 1 && (
+              <View style={styles.paginationRow}>
+                <TouchableOpacity
+                  style={[styles.pageNavBtn, safePage === 1 && styles.pageNavBtnDisabled]}
+                  onPress={() => {
+                    hapticFeedback.selection();
+                    setCurrentPage(p => Math.max(1, p - 1));
+                    mainScrollRef.current?.scrollTo({ y: 0, animated: true });
+                  }}
+                  disabled={safePage === 1}
+                  activeOpacity={0.7}
+                >
+                  <Feather name="chevron-left" size={18} color={safePage === 1 ? '#CBD5E1' : '#7C3AED'} />
+                </TouchableOpacity>
+
+                <View style={styles.pageInfoBadge}>
+                  <Text style={styles.pageInfoText}>
+                    Page <Text style={styles.pageInfoCurrent}>{safePage}</Text> of {totalPages}
+                  </Text>
+                  <Text style={styles.pageCountSubText}>
+                    Showing {Math.min(filteredAndSorted.length, (safePage - 1) * PAGE_SIZE + 1)}–{Math.min(filteredAndSorted.length, safePage * PAGE_SIZE)} of {filteredAndSorted.length} products
+                  </Text>
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.pageNavBtn, safePage === totalPages && styles.pageNavBtnDisabled]}
+                  onPress={() => {
+                    hapticFeedback.selection();
+                    setCurrentPage(p => Math.min(totalPages, p + 1));
+                    mainScrollRef.current?.scrollTo({ y: 0, animated: true });
+                  }}
+                  disabled={safePage === totalPages}
+                  activeOpacity={0.7}
+                >
+                  <Feather name="chevron-right" size={18} color={safePage === totalPages ? '#CBD5E1' : '#7C3AED'} />
+                </TouchableOpacity>
+              </View>
+            )}
+          </>
         )}
+
+        <View style={{ height: 28 }} />
+      </View>
       </ScrollView>
 
       {/* Bottom Nav */}
@@ -1269,26 +1361,27 @@ const styles = StyleSheet.create({
     boxShadow: '0px 8px 24px rgba(0, 0, 0, 0.25)',
   },
   toastText: { color: '#FFF', fontSize: 12, fontWeight: 'bold', flex: 1 },
-  header: { borderBottomLeftRadius: 32, borderBottomRightRadius: 32 },
-  safeHeader: { paddingHorizontal: 20, paddingBottom: 20 },
-  appBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12 },
+  header: { borderBottomLeftRadius: 28, borderBottomRightRadius: 28, paddingBottom: 20 },
+  safeHeader: { paddingHorizontal: 20 },
+  appBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10 },
   logoRow: { flexDirection: 'row', alignItems: 'center' },
-  logoIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', marginRight: 10 },
-  logoText: { fontSize: 20, fontWeight: 'bold', color: '#FFF', letterSpacing: -0.5 },
+  logoIcon: { width: 34, height: 34, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', marginRight: 9 },
+  logoText: { fontSize: 20, fontWeight: '800', color: '#FFF', letterSpacing: -0.5 },
   logoDot: { color: '#C084FC' },
   appBarRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   addBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, gap: 4 },
   addBtnText: { color: '#7C3AED', fontSize: 11, fontWeight: 'bold' },
-  roleBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12 },
-  roleIndicator: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#4CAF50', marginRight: 6 },
-  roleText: { color: '#FFF', fontSize: 9, fontWeight: 'bold', letterSpacing: 0.5 },
-  pageTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 12 },
-  pageSubtitle: { fontSize: 10, color: 'rgba(255,255,255,0.6)', fontWeight: 'bold', letterSpacing: 1.2 },
-  pageTitle: { fontSize: 24, fontWeight: '800', color: '#FFF', marginTop: 2 },
-  countBadge: { backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
-  countBadgeText: { color: '#FFF', fontSize: 10, fontWeight: '600' },
+  roleBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.16)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
+  roleIndicator: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#4ADE80', marginRight: 6 },
+  roleText: { color: '#FFF', fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
+  pageTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 14 },
+  pageSubtitle: { fontSize: 11, color: '#DDD6FE', fontWeight: '700', letterSpacing: 1.2 },
+  pageTitle: { fontSize: 24, fontWeight: '800', color: '#FFF', marginTop: 4 },
+  countBadge: { backgroundColor: 'rgba(255,255,255,0.18)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
+  countBadgeText: { color: '#FFF', fontSize: 11, fontWeight: '700' },
   scrollView: { flex: 1 },
-  scrollContent: { padding: 16, paddingBottom: 8 },
+  scrollContent: { paddingBottom: 48 },
+  innerContent: { paddingHorizontal: 16, paddingTop: 14 },
   statsRow: { flexDirection: 'row', gap: 6, marginBottom: 14 },
   statCard: { flex: 1, backgroundColor: '#FFF', borderRadius: 12, padding: 8, borderWidth: 1, borderColor: '#F3E8FF' },
   statLabel: { fontSize: 7, color: '#A0AEC0', fontWeight: 'bold', letterSpacing: 0.5 },
@@ -1327,6 +1420,49 @@ const styles = StyleSheet.create({
   statusDot: { width: 6, height: 6, borderRadius: 3 },
   statusLabel: { fontSize: 9, fontWeight: 'bold' },
   stockCount: { fontSize: 11, fontWeight: '800', color: '#1A1A2E' },
+  // Pagination
+  paginationRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#F3E8FF',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginTop: 16,
+    boxShadow: '0px 2px 8px rgba(124, 58, 237, 0.04)',
+  },
+  pageNavBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: '#F3E8FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  pageNavBtnDisabled: {
+    backgroundColor: '#F1F5F9',
+  },
+  pageInfoBadge: {
+    alignItems: 'center',
+  },
+  pageInfoText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#4B5563',
+  },
+  pageInfoCurrent: {
+    color: '#7C3AED',
+    fontWeight: '800',
+  },
+  pageCountSubText: {
+    fontSize: 10,
+    color: '#94A3B8',
+    marginTop: 2,
+    fontWeight: '500',
+  },
   // Modal
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalSheet: { backgroundColor: '#FFF', borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 24, maxHeight: '85%' },
