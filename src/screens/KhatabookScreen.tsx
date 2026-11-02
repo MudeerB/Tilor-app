@@ -13,6 +13,8 @@ import {
   Platform,
   ActivityIndicator,
   Linking,
+  KeyboardAvoidingView,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -322,6 +324,7 @@ export const KhatabookScreen: React.FC<KhatabookScreenProps> = ({
 
   // Submit Repayment with Optimistic UI & Automatic Rollback
   const handleRecordPayment = async () => {
+    Keyboard.dismiss();
     if (!repayCust || !repayInvoice || !repayInvoice.dbId) return;
     const amount = parseFloat(repayAmount);
     if (isNaN(amount) || amount <= 0) {
@@ -433,6 +436,7 @@ Thank you for your business!
 
   // Add Manual Entry
   const handleAddManualEntry = async () => {
+    Keyboard.dismiss();
     if (!entryName.trim() || !entryPhone.trim() || !entryAmount.trim()) {
       Alert.alert('Required Fields', 'Please fill name, phone, and amount.');
       return;
@@ -557,7 +561,17 @@ Thank you for your business!
       <StatusBar barStyle="light-content" />
 
       {/* Main Content */}
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+        >
       {/* Header Banner */}
       <LinearGradient
         colors={['#6D28D9', '#7C3AED', '#A855F7']}
@@ -637,9 +651,13 @@ Thank you for your business!
             placeholderTextColor="#A0AEC0"
             value={search}
             onChangeText={setSearch}
+            returnKeyType="search"
+            onSubmitEditing={() => Keyboard.dismiss()}
+            autoCapitalize="none"
+            autoCorrect={false}
           />
           {search.length > 0 && (
-            <TouchableOpacity onPress={() => setSearch('')}>
+            <TouchableOpacity onPress={() => setSearch('')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
               <Feather name="x" size={14} color="#A0AEC0" />
             </TouchableOpacity>
           )}
@@ -689,15 +707,19 @@ Thank you for your business!
 
         <View style={{ height: 20 }} />
       </ScrollView>
+    </KeyboardAvoidingView>
 
       {/* ── Record Repayment Modal ── */}
       <Modal visible={repayModalVisible} transparent animationType="slide" onRequestClose={() => setRepayModalVisible(false)}>
-        <View style={styles.modalBackdrop}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalBackdrop}
+        >
           <View style={styles.sheetContent}>
             <View style={styles.sheetHandle} />
             <View style={styles.sheetHeader}>
               <Text style={styles.sheetTitle}>Record Debt Repayment</Text>
-              <TouchableOpacity onPress={() => setRepayModalVisible(false)} style={styles.modalCloseBtn}>
+              <TouchableOpacity onPress={() => { Keyboard.dismiss(); setRepayModalVisible(false); }} style={styles.modalCloseBtn}>
                 <Feather name="x" size={18} color="#6B7280" />
               </TouchableOpacity>
             </View>
@@ -763,7 +785,7 @@ Thank you for your business!
               </View>
             )}
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ── Ledger Audit Drawer Modal ── */}
@@ -834,11 +856,14 @@ Thank you for your business!
 
       {/* ── Add Manual Credit Entry Modal ── */}
       <Modal visible={addEntryVisible} transparent animationType="fade" onRequestClose={() => setAddEntryVisible(false)}>
-        <View style={styles.modalBackdrop}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalBackdrop}
+        >
           <View style={styles.dialogBox}>
             <View style={styles.sheetHeader}>
               <Text style={styles.sheetTitle}>New Debt Entry</Text>
-              <TouchableOpacity onPress={() => setAddEntryVisible(false)} style={styles.modalCloseBtn}>
+              <TouchableOpacity onPress={() => { Keyboard.dismiss(); setAddEntryVisible(false); }} style={styles.modalCloseBtn}>
                 <Feather name="x" size={18} color="#6B7280" />
               </TouchableOpacity>
             </View>
@@ -869,7 +894,7 @@ Thank you for your business!
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -907,9 +932,9 @@ const styles = StyleSheet.create({
   kpiLabelGreen: { fontSize: 8, color: '#16A34A', fontWeight: 'bold', letterSpacing: 0.8 },
   kpiValGreen: { fontSize: 18, fontWeight: '800', color: '#16A34A', marginTop: 2 },
   kpiSubGreen: { fontSize: 9, color: '#166534', marginTop: 2 },
-  searchBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 12, boxShadow: '0px 2px 8px rgba(0,0,0,0.04)' },
+  searchBar: { height: 48, flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', borderRadius: 16, paddingHorizontal: 14, marginBottom: 12, boxShadow: '0px 2px 8px rgba(0,0,0,0.04)' },
   searchIcon: { marginRight: 8 },
-  searchInput: { flex: 1, fontSize: 12, color: '#1A1A2E' },
+  searchInput: { flex: 1, height: '100%', fontSize: 12, color: '#1A1A2E' },
   filterRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
   filterChip: { flex: 1, paddingVertical: 8, borderRadius: 14, backgroundColor: '#FFF', alignItems: 'center', borderWidth: 1, borderColor: '#E9D5FF' },
   filterChipActive: { backgroundColor: '#6D28D9', borderColor: '#6D28D9' },

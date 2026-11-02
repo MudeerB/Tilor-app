@@ -11,6 +11,8 @@ import {
   Alert,
   FlatList,
   Platform,
+  KeyboardAvoidingView,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -520,6 +522,7 @@ export const EstimatorScreen: React.FC<EstimatorScreenProps> = ({
   };
 
   const handleSelectCollection = (col: TileCollection) => {
+    Keyboard.dismiss();
     if (!targetRoomId) return;
 
     setRooms(prev =>
@@ -942,12 +945,17 @@ export const EstimatorScreen: React.FC<EstimatorScreenProps> = ({
       </LinearGradient>
 
       {/* Scrollable Main Content */}
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+        >
         <View style={styles.innerContent}>
           {/* Global Stock Alert Banner */}
           {stockSummary.hasViolations && (
@@ -1355,6 +1363,7 @@ export const EstimatorScreen: React.FC<EstimatorScreenProps> = ({
           </TouchableOpacity>
         </View>
       )}
+      </KeyboardAvoidingView>
 
       {/* Bottom Nav */}
       <BottomNavBar activeTab={activeTab} onTabPress={onTabChange} />
@@ -1499,19 +1508,37 @@ export const EstimatorScreen: React.FC<EstimatorScreenProps> = ({
 
       {/* 3. Modal Sheet: Tile Picker */}
       <Modal visible={tilePickerVisible} transparent animationType="slide" onRequestClose={() => setTilePickerVisible(false)}>
-        <View style={styles.modalBackdrop}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalBackdrop}
+        >
           <View style={styles.sheetContent}>
             <View style={styles.sheetHandle} />
             <View style={styles.sheetHeader}>
               <Text style={styles.sheetTitle}>Select Tile Product</Text>
-              <TouchableOpacity onPress={() => setTilePickerVisible(false)} style={styles.modalCloseBtn}>
+              <TouchableOpacity onPress={() => { Keyboard.dismiss(); setTilePickerVisible(false); }} style={styles.modalCloseBtn}>
                 <Feather name="x" size={18} color="#6B7280" />
               </TouchableOpacity>
             </View>
 
             <View style={styles.sheetSearchWrap}>
               <Feather name="search" size={14} color="#A0AEC0" style={{ marginRight: 6 }} />
-              <TextInput style={styles.sheetSearchInput} placeholder="Search tile name, size, or brand..." placeholderTextColor="#A0AEC0" value={tileSearch} onChangeText={setTileSearch} />
+              <TextInput
+                style={styles.sheetSearchInput}
+                placeholder="Search tile name, size, or brand..."
+                placeholderTextColor="#A0AEC0"
+                value={tileSearch}
+                onChangeText={setTileSearch}
+                returnKeyType="search"
+                onSubmitEditing={() => Keyboard.dismiss()}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              {tileSearch.length > 0 && (
+                <TouchableOpacity onPress={() => setTileSearch('')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <Feather name="x" size={14} color="#A0AEC0" />
+                </TouchableOpacity>
+              )}
             </View>
 
             <View style={styles.filterChipsRow}>
@@ -1526,6 +1553,9 @@ export const EstimatorScreen: React.FC<EstimatorScreenProps> = ({
               data={filteredTiles}
               keyExtractor={item => item.id}
               showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              style={{ flex: 1 }}
               renderItem={({ item }) => {
                 const mainVariant = item.variants[0];
                 const totalStock = item.is12x18
@@ -1551,7 +1581,7 @@ export const EstimatorScreen: React.FC<EstimatorScreenProps> = ({
               }}
             />
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* 4. Confirm Clear Modal */}
@@ -1901,8 +1931,8 @@ const styles = StyleSheet.create({
   templateDivider: { height: 1, backgroundColor: '#E2E8F0', marginVertical: 4 },
 
   // Tile Picker Modal Sheet
-  sheetSearchWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8F6FF', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 10 },
-  sheetSearchInput: { flex: 1, fontSize: 12, color: '#0F172A' },
+  sheetSearchWrap: { height: 48, flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8F6FF', borderRadius: 12, paddingHorizontal: 12, marginBottom: 10 },
+  sheetSearchInput: { flex: 1, height: '100%', fontSize: 12, color: '#0F172A' },
   filterChipsRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
   sizeChip: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 14, backgroundColor: '#F1F5F9' },
   sizeChipActive: { backgroundColor: '#7C3AED' },

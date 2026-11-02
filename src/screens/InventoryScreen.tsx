@@ -31,6 +31,9 @@ import {
   ActivityIndicator,
   Animated,
   Pressable,
+  KeyboardAvoidingView,
+  Keyboard,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -669,13 +672,18 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       />
 
       {/* Main Content */}
-      <ScrollView
-        ref={mainScrollRef}
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
+        <ScrollView
+          ref={mainScrollRef}
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+        >
       {/* Header Banner - Edge-to-Edge */}
       <LinearGradient
         colors={['#5B21B6', '#6D28D9', '#7C3AED']}
@@ -764,9 +772,13 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
             placeholderTextColor="#A0AEC0"
             value={search}
             onChangeText={setSearch}
+            returnKeyType="search"
+            onSubmitEditing={() => Keyboard.dismiss()}
+            autoCapitalize="none"
+            autoCorrect={false}
           />
           {search.length > 0 && (
-            <TouchableOpacity onPress={() => setSearch('')}>
+            <TouchableOpacity onPress={() => setSearch('')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
               <Feather name="x" size={14} color="#A0AEC0" />
             </TouchableOpacity>
           )}
@@ -885,13 +897,17 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         <View style={{ height: 28 }} />
       </View>
       </ScrollView>
+    </KeyboardAvoidingView>
 
       {/* Bottom Nav */}
       <BottomNavBar activeTab={activeTab} onTabPress={onTabChange} isOwner={session.role === 'owner' || session.role === 'admin'} />
 
       {/* ── Tile Detail / Adjust Modal ── */}
       <Modal visible={!!selectedTile} transparent animationType="slide" onRequestClose={() => setSelectedTile(null)}>
-        <View style={styles.modalBackdrop}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalBackdrop}
+        >
           <View style={styles.modalSheet}>
             {selectedTile && activeVariant && (
               <>
@@ -1194,7 +1210,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
               </>
             )}
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ── Feature #8: Confirmation Sheet before Outward Deduction ── */}
@@ -1239,7 +1255,10 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
       {/* ── Add Product Modal ── */}
       <Modal visible={addModalVisible} transparent animationType="fade" onRequestClose={() => setAddModalVisible(false)}>
-        <View style={styles.modalBackdrop}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalBackdrop}
+        >
           <View style={[styles.modalSheet, { borderRadius: 28 }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Add New Product</Text>
@@ -1336,7 +1355,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -1387,9 +1406,9 @@ const styles = StyleSheet.create({
   statLabel: { fontSize: 7, color: '#A0AEC0', fontWeight: 'bold', letterSpacing: 0.5 },
   statValue: { fontSize: 13, fontWeight: '800', color: '#1A1A2E', marginTop: 2 },
   statSubNote: { fontSize: 7, color: '#A0AEC0', marginTop: 2, fontWeight: '500' },
-  searchBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 11, marginBottom: 12, boxShadow: '0px 2px 8px rgba(0,0,0,0.04)' },
+  searchBar: { height: 48, flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', borderRadius: 16, paddingHorizontal: 14, marginBottom: 12, boxShadow: '0px 2px 8px rgba(0,0,0,0.04)' },
   searchIcon: { marginRight: 8 },
-  searchInput: { flex: 1, fontSize: 12, color: '#1A1A2E' },
+  searchInput: { flex: 1, height: '100%', fontSize: 12, color: '#1A1A2E' },
   chipsRow: { marginBottom: 14 },
   chipsContent: { paddingRight: 4, gap: 8 },
   chip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, backgroundColor: '#FFF', borderWidth: 1, borderColor: '#E9D5FF' },

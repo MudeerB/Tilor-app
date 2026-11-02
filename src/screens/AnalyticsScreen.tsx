@@ -11,6 +11,9 @@ import {
   Share,
   Alert,
   Modal,
+  KeyboardAvoidingView,
+  Keyboard,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -811,12 +814,18 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
 
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#7C3AED']} tintColor="#7C3AED" />}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#7C3AED']} tintColor="#7C3AED" />}
+        >
         {/* Header Banner */}
         <LinearGradient
           colors={['#6D28D9', '#7C3AED', '#A855F7']}
@@ -1070,9 +1079,13 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
                         placeholderTextColor="#9CA3AF"
                         value={productSearch}
                         onChangeText={setProductSearch}
+                        returnKeyType="search"
+                        onSubmitEditing={() => Keyboard.dismiss()}
+                        autoCapitalize="none"
+                        autoCorrect={false}
                       />
                       {productSearch.length > 0 && (
-                        <TouchableOpacity onPress={() => setProductSearch('')}>
+                        <TouchableOpacity onPress={() => setProductSearch('')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                           <Feather name="x" size={14} color="#9CA3AF" />
                         </TouchableOpacity>
                       )}
@@ -1236,9 +1249,13 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
                         placeholderTextColor="#9CA3AF"
                         value={customerSearch}
                         onChangeText={setCustomerSearch}
+                        returnKeyType="search"
+                        onSubmitEditing={() => Keyboard.dismiss()}
+                        autoCapitalize="none"
+                        autoCorrect={false}
                       />
                       {customerSearch.length > 0 && (
-                        <TouchableOpacity onPress={() => setCustomerSearch('')}>
+                        <TouchableOpacity onPress={() => setCustomerSearch('')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                           <Feather name="x" size={14} color="#9CA3AF" />
                         </TouchableOpacity>
                       )}
@@ -1323,6 +1340,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({
 
         <View style={{ height: 32 }} />
       </ScrollView>
+    </KeyboardAvoidingView>
 
       {/* ═══════════════════════════════════════════════════════════════════════ */}
       {/* DRILL-DOWN MODAL: PRODUCT DETAILS & VARIANT DISTRIBUTION               */}
@@ -1733,8 +1751,8 @@ const styles = StyleSheet.create({
 
   // Controls Row (Search & Sort)
   controlsRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
-  searchBox: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, borderColor: '#E9D5FF' },
-  searchInput: { flex: 1, fontSize: 11, color: '#1A1A2E' },
+  searchBox: { flex: 1, height: 48, flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', borderRadius: 14, paddingHorizontal: 12, borderWidth: 1, borderColor: '#E9D5FF' },
+  searchInput: { flex: 1, height: '100%', fontSize: 11, color: '#1A1A2E' },
   sortToggleRow: { flexDirection: 'row', backgroundColor: '#FFF', borderRadius: 14, padding: 3, borderWidth: 1, borderColor: '#E9D5FF' },
   sortMiniBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 11 },
   sortMiniBtnActive: { backgroundColor: '#7C3AED' },

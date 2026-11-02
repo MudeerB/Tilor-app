@@ -260,10 +260,25 @@ export function printCleanReceiptOnWeb(receiptText: string, title: string = 'Tax
   }
 }
 
+import { billPdfService } from '../services/pdf/billPdfService';
+
 /**
  * Universal cross-platform handler to share or print receipts across Web, Android, and iOS.
+ * Supports passing structured InvoicePrintData or legacy receiptText string.
  */
-export async function shareOrPrintReceipt(receiptText: string, invoiceId?: string): Promise<void> {
+export async function shareOrPrintReceipt(receiptTextOrInvoice: any, invoiceId?: string): Promise<void> {
+  if (!receiptTextOrInvoice) return;
+
+  // If a structured invoice object is passed, use the new billPdfService
+  if (typeof receiptTextOrInvoice === 'object' && receiptTextOrInvoice.invoiceId) {
+    const res = await billPdfService.generateAndShare(receiptTextOrInvoice);
+    if (!res.success) {
+      Alert.alert('PDF Share Error', res.error || 'Failed to share invoice PDF.');
+    }
+    return;
+  }
+
+  const receiptText = typeof receiptTextOrInvoice === 'string' ? receiptTextOrInvoice : '';
   if (!receiptText) return;
 
   const invTitle = invoiceId ? `Invoice ${invoiceId}` : 'Tax Invoice';

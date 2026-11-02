@@ -36,6 +36,8 @@ import {
   Platform,
   Share,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -57,6 +59,7 @@ import {
   sanitizeTxnRef,
 } from '../utils/sanitize';
 import { shareOrPrintReceipt } from '../utils/receiptPrint';
+import { billPdfService } from '../services/pdf/billPdfService';
 import { useDebouncedValue } from '../hooks/useDebounce';
 import { hapticFeedback } from '../utils/haptics';
 
@@ -109,12 +112,6 @@ Due Date: ${sanitizeReceiptField(inv.creditDetail.dueDate, 20)}`
 --------------------------------
 Thank you for shopping at Tilor!
 `.trim();
-};
-
-const handleShareOrPrintInvoice = async (inv: any) => {
-  if (!inv) return;
-  const receiptText = generateReceiptText(inv);
-  await shareOrPrintReceipt(receiptText, inv.invoiceId);
 };
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -200,6 +197,28 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
   // Success Modal State
   const [successModalVisible, setSuccessModalVisible] = useState(false);
   const [lastInvoice, setLastInvoice] = useState<any>(null);
+  const [isSharingPdf, setIsSharingPdf] = useState(false);
+
+  const handleShareOrPrintInvoice = useCallback(async (inv: any) => {
+    if (!inv) {
+      Alert.alert('Invoice Missing', 'No invoice record available to share.');
+      return;
+    }
+    if (isSharingPdf) return;
+
+    setIsSharingPdf(true);
+    try {
+      const result = await billPdfService.generateAndShare(inv);
+      if (!result.success) {
+        Alert.alert('PDF Share Error', result.error || 'Failed to generate and share the PDF invoice.');
+      }
+    } catch (err: any) {
+      console.error('Error sharing PDF invoice:', err);
+      Alert.alert('PDF Share Error', err?.message || 'Failed to generate and share the PDF invoice.');
+    } finally {
+      setIsSharingPdf(false);
+    }
+  }, [isSharingPdf]);
 
   // Loading & Fulfillment State
   const [requiresLoading, setRequiresLoading] = useState(true);
@@ -297,6 +316,7 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
 
   // Add tile from catalog search dropdown (Opens Variant Picker if 12x18 tile)
   const handleAddTileToCart = (col: TileCollection, targetVariant?: TileVariant, keepSearchOpen = false) => {
+    Keyboard.dismiss();
     if (col.is12x18 && !targetVariant) {
       setSearchModalVisible(false);
       setVariantPickerTile(col);
@@ -634,6 +654,7 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
       >
         {/* Header Banner - Edge-to-Edge */}
         <LinearGradient
@@ -1026,20 +1047,29 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
         onRequestClose={() => setCheckoutVisible(false)}
       >
         <View style={styles.modalBackdrop}>
-          <View style={styles.checkoutSheet}>
-            <View style={styles.sheetHandle} />
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={{ width: '100%', alignItems: 'center' }}
+          >
+            <View style={styles.checkoutSheet}>
+              <View style={styles.sheetHandle} />
 
-            <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>Checkout Details</Text>
-              <TouchableOpacity
-                onPress={() => setCheckoutVisible(false)}
-                style={styles.modalCloseBtn}
+              <View style={styles.sheetHeader}>
+                <Text style={styles.sheetTitle}>Checkout Details</Text>
+                <TouchableOpacity
+                  onPress={() => setCheckoutVisible(false)}
+                  style={styles.modalCloseBtn}
+                >
+                  <Feather name="x" size={18} color="#6B7280" />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                style={{ maxHeight: 460 }}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
               >
-                <Feather name="x" size={18} color="#6B7280" />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 460 }} keyboardShouldPersistTaps="handled">
               {Boolean(checkoutError) && (
                 <View style={styles.checkoutErrorBanner}>
                   <Feather name="alert-triangle" size={14} color="#EF4444" />
@@ -1234,6 +1264,7 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
               </LinearGradient>
             </TouchableOpacity>
           </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
 
@@ -1263,11 +1294,22 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
 
             <View style={{ flexDirection: 'row', gap: 12, marginTop: 24, width: '100%' }}>
               <TouchableOpacity
-                style={styles.shareBtn}
+                style={[styles.shareBtn, isSharingPdf && { opacity: 0.7 }]}
                 onPress={() => handleShareOrPrintInvoice(lastInvoice)}
+                disabled={isSharingPdf}
+                activeOpacity={0.7}
               >
-                <Feather name="share-2" size={14} color="#7C3AED" />
-                <Text style={styles.shareBtnText}>Share Receipt</Text>
+                {isSharingPdf ? (
+                  <>
+                    <ActivityIndicator size="small" color="#7C3AED" />
+                    <Text style={styles.shareBtnText}>Generating PDF...</Text>
+                  </>
+                ) : (
+                  <>
+                    <Feather name="share-2" size={14} color="#7C3AED" />
+                    <Text style={styles.shareBtnText}>Share Bill (PDF)</Text>
+                  </>
+                )}
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -1313,68 +1355,79 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
         onRequestClose={() => setSearchModalVisible(false)}
       >
         <SafeAreaView style={styles.searchModalContainer} edges={['top', 'bottom']}>
-          {/* Pinned Search Header */}
-          <View style={styles.searchModalHeader}>
-            <TouchableOpacity
-              onPress={() => setSearchModalVisible(false)}
-              style={styles.searchModalBackBtn}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Feather name="arrow-left" size={20} color="#1E293B" />
-            </TouchableOpacity>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={{ flex: 1 }}
+          >
+            {/* Pinned Search Header (Fixed height 48px) */}
+            <View style={styles.searchModalHeader}>
+              <TouchableOpacity
+                onPress={() => setSearchModalVisible(false)}
+                style={styles.searchModalBackBtn}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Feather name="arrow-left" size={20} color="#1E293B" />
+              </TouchableOpacity>
 
-            <View style={styles.searchModalInputWrap}>
-              <Feather name="search" size={16} color="#7C3AED" style={{ marginRight: 8 }} />
-              <TextInput
-                style={styles.searchModalInput}
-                placeholder="Search tile name, brand, or size..."
-                placeholderTextColor="#94A3B8"
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                autoFocus
-                returnKeyType="search"
-                clearButtonMode="while-editing"
-              />
-              {searchQuery.length > 0 && (
-                <TouchableOpacity onPress={() => setSearchQuery('')} style={{ padding: 4 }}>
-                  <Feather name="x-circle" size={16} color="#94A3B8" />
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-
-          {/* Size Filter Pills Bar */}
-          <View style={styles.searchModalFilterBar}>
-            <Text style={styles.filterBarLabel}>Filter by Size:</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterChipsScroll}>
-              {['all', '12x18', '2x2', '2x4'].map(sz => (
-                <TouchableOpacity
-                  key={sz}
-                  style={[styles.sizeChip, sizeFilter === sz && styles.sizeChipActive]}
-                  onPress={() => setSizeFilter(sz)}
-                >
-                  <Text style={[styles.sizeChipText, sizeFilter === sz && styles.sizeChipTextActive]}>
-                    {sz === 'all' ? 'All Sizes' : sz}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-
-          {/* Search Results FlatList */}
-          <FlatList
-            data={searchResults}
-            keyExtractor={item => item.id}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="on-drag"
-            contentContainerStyle={styles.searchResultsContainer}
-            ListEmptyComponent={
-              <View style={styles.searchEmptyContainer}>
-                <Feather name="inbox" size={40} color="#CBD5E1" />
-                <Text style={styles.searchEmptyTitle}>No matching tiles found</Text>
-                <Text style={styles.searchEmptySub}>Try a different keyword or select "All Sizes"</Text>
+              <View style={styles.searchModalInputWrap}>
+                <Feather name="search" size={16} color="#7C3AED" style={{ marginRight: 8 }} />
+                <TextInput
+                  style={styles.searchModalInput}
+                  placeholder="Search tile name, brand, or size..."
+                  placeholderTextColor="#94A3B8"
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  autoFocus
+                  returnKeyType="search"
+                  onSubmitEditing={() => Keyboard.dismiss()}
+                  clearButtonMode="while-editing"
+                />
+                {searchQuery.length > 0 && (
+                  <TouchableOpacity onPress={() => setSearchQuery('')} style={{ padding: 4 }}>
+                    <Feather name="x-circle" size={16} color="#94A3B8" />
+                  </TouchableOpacity>
+                )}
               </View>
-            }
+            </View>
+
+            {/* Size Filter Pills Bar */}
+            <View style={styles.searchModalFilterBar}>
+              <Text style={styles.filterBarLabel}>Filter by Size:</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.filterChipsScroll}
+                keyboardShouldPersistTaps="handled"
+              >
+                {['all', '12x18', '2x2', '2x4'].map(sz => (
+                  <TouchableOpacity
+                    key={sz}
+                    style={[styles.sizeChip, sizeFilter === sz && styles.sizeChipActive]}
+                    onPress={() => setSizeFilter(sz)}
+                  >
+                    <Text style={[styles.sizeChipText, sizeFilter === sz && styles.sizeChipTextActive]}>
+                      {sz === 'all' ? 'All Sizes' : sz}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
+            {/* Search Results FlatList (flex: 1 sibling) */}
+            <FlatList
+              style={{ flex: 1 }}
+              data={searchResults}
+              keyExtractor={item => item.id}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              contentContainerStyle={styles.searchResultsContainer}
+              ListEmptyComponent={
+                <View style={styles.searchEmptyContainer}>
+                  <Feather name="inbox" size={40} color="#CBD5E1" />
+                  <Text style={styles.searchEmptyTitle}>No matching tiles found</Text>
+                  <Text style={styles.searchEmptySub}>Try a different keyword or select "All Sizes"</Text>
+                </View>
+              }
             renderItem={({ item: tile }) => {
               const inCartCount = cart
                 .filter(c => c.tileId === tile.id)
@@ -1455,6 +1508,7 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
               <Feather name="arrow-right" size={14} color="#FFF" />
             </TouchableOpacity>
           </View>
+          </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
     </View>
@@ -1627,7 +1681,7 @@ const styles = StyleSheet.create({
   searchModalContainer: { flex: 1, backgroundColor: '#F8FAFC' },
   searchModalHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#FFF', borderBottomWidth: 1, borderBottomColor: '#F1F5F9', gap: 10 },
   searchModalBackBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center' },
-  searchModalInputWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderWidth: 1.5, borderColor: '#DDD6FE', borderRadius: 12, paddingHorizontal: 12, height: 42 },
+  searchModalInputWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderWidth: 1.5, borderColor: '#DDD6FE', borderRadius: 12, paddingHorizontal: 12, height: 48 },
   searchModalInput: { flex: 1, fontSize: 14, color: '#0F172A', fontWeight: '500', padding: 0 },
   searchModalFilterBar: { paddingHorizontal: 16, paddingVertical: 10, backgroundColor: '#FFF', borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
   filterBarLabel: { fontSize: 11, fontWeight: '700', color: '#64748B', marginBottom: 6 },

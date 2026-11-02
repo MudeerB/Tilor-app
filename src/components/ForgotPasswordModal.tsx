@@ -17,6 +17,8 @@ import {
   Keyboard,
   ActivityIndicator,
   TouchableOpacity,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Input } from './Input';
@@ -90,7 +92,11 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
       onRequestClose={onClose}
       statusBarTranslucent
     >
-      <Pressable style={styles.backdrop} onPress={Keyboard.dismiss}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1 }}
+      >
+        <Pressable style={styles.backdrop} onPress={Keyboard.dismiss}>
         <Animated.View
           style={[
             styles.sheet,
@@ -166,7 +172,8 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
           )}
         </Animated.View>
       </Pressable>
-    </Modal>
+    </KeyboardAvoidingView>
+  </Modal>
   );
 };
 

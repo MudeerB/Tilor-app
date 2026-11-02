@@ -11,6 +11,8 @@ import {
   Alert,
   FlatList,
   Platform,
+  KeyboardAvoidingView,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -232,6 +234,7 @@ export const CustomersScreen: React.FC<CustomersScreenProps> = ({
 
   // Add new customer
   const handleAddCustomer = async () => {
+    Keyboard.dismiss();
     if (!newName.trim() || !newPhone.trim()) {
       Alert.alert('Required Fields', 'Please enter customer name and phone number.');
       return;
@@ -269,6 +272,7 @@ export const CustomersScreen: React.FC<CustomersScreenProps> = ({
 
   // Repayment submission
   const handleSubmitRepayment = async () => {
+    Keyboard.dismiss();
     if (!selectedCust || !repayInvoice) return;
     const amount = parseFloat(repayAmount);
     if (isNaN(amount) || amount <= 0) {
@@ -362,11 +366,17 @@ export const CustomersScreen: React.FC<CustomersScreenProps> = ({
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
 
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+        >
         {/* Header Banner */}
         <LinearGradient
           colors={['#6D28D9', '#7C3AED', '#A855F7']}
@@ -449,9 +459,13 @@ export const CustomersScreen: React.FC<CustomersScreenProps> = ({
             placeholderTextColor="#A0AEC0"
             value={search}
             onChangeText={setSearch}
+            returnKeyType="search"
+            onSubmitEditing={() => Keyboard.dismiss()}
+            autoCapitalize="none"
+            autoCorrect={false}
           />
           {search.length > 0 && (
-            <TouchableOpacity onPress={() => setSearch('')}>
+            <TouchableOpacity onPress={() => setSearch('')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
               <Feather name="x" size={14} color="#A0AEC0" />
             </TouchableOpacity>
           )}
@@ -545,6 +559,7 @@ export const CustomersScreen: React.FC<CustomersScreenProps> = ({
 
         <View style={{ height: 16 }} />
       </ScrollView>
+    </KeyboardAvoidingView>
 
       {/* Bottom Nav */}
       <BottomNavBar activeTab={activeTab} onTabPress={onTabChange} />
@@ -657,13 +672,17 @@ export const CustomersScreen: React.FC<CustomersScreenProps> = ({
       </Modal>
 
       {/* ── Add Customer Modal ── */}
+      {/* ── Add New Customer Modal ── */}
       <Modal
         visible={addModalVisible}
         transparent
         animationType="fade"
         onRequestClose={() => setAddModalVisible(false)}
       >
-        <View style={styles.modalBackdrop}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalBackdrop}
+        >
           <View style={styles.addModalBox}>
             <View style={styles.addModalHeader}>
               <Text style={styles.addModalTitle}>Add New Customer</Text>
@@ -723,7 +742,7 @@ export const CustomersScreen: React.FC<CustomersScreenProps> = ({
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ── Repayment Modal ── */}
@@ -733,7 +752,10 @@ export const CustomersScreen: React.FC<CustomersScreenProps> = ({
         animationType="slide"
         onRequestClose={() => setRepayModalVisible(false)}
       >
-        <View style={styles.modalBackdrop}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalBackdrop}
+        >
           <View style={styles.repaySheet}>
             <View style={styles.sheetHandle} />
             <View style={styles.sheetHeader}>
@@ -770,7 +792,7 @@ export const CustomersScreen: React.FC<CustomersScreenProps> = ({
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -815,17 +837,17 @@ const styles = StyleSheet.create({
   statLabel: { fontSize: 8, color: '#A0AEC0', fontWeight: 'bold', letterSpacing: 0.5 },
   statVal: { fontSize: 14, fontWeight: '800', color: '#1A1A2E', marginTop: 4 },
   searchBar: {
+    height: 48,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFF',
     borderRadius: 16,
     paddingHorizontal: 14,
-    paddingVertical: 10,
     marginBottom: 12,
     boxShadow: '0px 2px 8px rgba(0,0,0,0.04)',
   },
   searchIcon: { marginRight: 8 },
-  searchInput: { flex: 1, fontSize: 12, color: '#1A1A2E' },
+  searchInput: { flex: 1, height: '100%', fontSize: 12, color: '#1A1A2E' },
   controlsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, gap: 10 },
   filterChip: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 16, backgroundColor: '#FFF', borderWidth: 1, borderColor: '#E9D5FF' },
   filterChipActive: { backgroundColor: '#7C3AED', borderColor: '#7C3AED' },

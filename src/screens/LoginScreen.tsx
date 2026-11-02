@@ -28,6 +28,7 @@ import {
   Animated,
   StatusBar,
   TouchableOpacity,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -190,10 +191,17 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
 
       <SafeAreaView style={styles.safeArea}>
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.keyboardView}
         >
-          <View style={styles.contentContainer}>
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            showsVerticalScrollIndicator={false}
+            style={{ width: '100%' }}
+          >
+            <View style={styles.contentContainer}>
             {/* Header / Logo */}
             <View style={styles.header}>
               <LinearGradient
@@ -300,8 +308,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
             {/* Bug #15: App version footer */}
             <Text style={styles.versionText}>Tilor v{APP_VERSION} · Expo SDK 57</Text>
           </View>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
 
       {/* Bug #4: Forgot Password Modal */}
       <ForgotPasswordModal
@@ -341,8 +350,13 @@ const styles = StyleSheet.create({
   },
   keyboardView: {
     flex: 1,
+    width: '100%',
+  },
+  scrollContent: {
+    flexGrow: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingVertical: 24,
   },
   contentContainer: {
     width: '100%',

@@ -14,6 +14,8 @@ import {
   Share,
   ActivityIndicator,
   RefreshControl,
+  KeyboardAvoidingView,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -23,6 +25,7 @@ import { BottomNavBar, NavTab } from '../components/BottomNavBar';
 import { UserSession } from '../services/storage';
 import { billingService } from '../services/billing';
 import { shareOrPrintReceipt } from '../utils/receiptPrint';
+import { billPdfService } from '../services/pdf/billPdfService';
 import { HistorySkeleton } from '../components/skeleton';
 import { useDebouncedValue } from '../hooks/useDebounce';
 import { hapticFeedback } from '../utils/haptics';
@@ -153,12 +156,6 @@ Due Date: ${inv.creditDetail.dueDate}`
 --------------------------------
 Thank you for shopping at Tilor!
 `.trim();
-};
-
-const handleShareOrPrintInvoice = async (inv: InvoiceRecord | null) => {
-  if (!inv) return;
-  const receiptText = generateReceiptText(inv);
-  await shareOrPrintReceipt(receiptText, inv.invoiceId);
 };
 
 // ─── Memoized Timeline Card Components ───────────────────────────────────────
@@ -410,6 +407,28 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
 
   // Detailed Invoice View Modal state
   const [selectedInvoice, setSelectedInvoice]     = useState<InvoiceRecord | null>(null);
+  const [isSharingPdf, setIsSharingPdf]           = useState(false);
+
+  const handleShareOrPrintInvoice = useCallback(async (inv: InvoiceRecord | null) => {
+    if (!inv) {
+      Alert.alert('Invoice Missing', 'No invoice record selected to share.');
+      return;
+    }
+    if (isSharingPdf) return;
+
+    setIsSharingPdf(true);
+    try {
+      const result = await billPdfService.generateAndShare(inv);
+      if (!result.success) {
+        Alert.alert('PDF Share Error', result.error || 'Failed to generate and share the PDF invoice.');
+      }
+    } catch (err: any) {
+      console.error('Error sharing PDF invoice:', err);
+      Alert.alert('PDF Share Error', err?.message || 'Failed to generate and share the PDF invoice.');
+    } finally {
+      setIsSharingPdf(false);
+    }
+  }, [isSharingPdf]);
 
   // Repayment Modal state
   const [repayModalVisible, setRepayModalVisible] = useState(false);
@@ -820,12 +839,18 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
 
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#7C3AED']} />}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1 }}
       >
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#7C3AED']} />}
+        >
         {/* Header Banner */}
         <LinearGradient
           colors={['#6D28D9', '#7C3AED', '#A855F7']}
@@ -895,7 +920,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
           </View>
         </View>
 
-        {/* Search Bar */}
+        {/* Search Bar (Fixed Height 48px) */}
         <View style={styles.searchBar}>
           <Feather name="search" size={15} color="#A0AEC0" style={styles.searchIcon} />
           <TextInput
@@ -908,6 +933,8 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
             placeholderTextColor="#A0AEC0"
             value={search}
             onChangeText={setSearch}
+            returnKeyType="search"
+            onSubmitEditing={() => Keyboard.dismiss()}
           />
           {search.length > 0 && (
             <TouchableOpacity onPress={() => setSearch('')}>
@@ -1267,12 +1294,22 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
 
             <View style={{ flexDirection: 'row', gap: 8, marginTop: 16 }}>
               <TouchableOpacity
-                style={styles.modalShareBtn}
+                style={[styles.modalShareBtn, isSharingPdf && { opacity: 0.7 }]}
                 onPress={() => handleShareOrPrintInvoice(selectedInvoice)}
+                disabled={isSharingPdf}
                 activeOpacity={0.8}
               >
-                <Feather name="share-2" size={14} color="#7C3AED" />
-                <Text style={styles.modalShareBtnText}>Share / Print</Text>
+                {isSharingPdf ? (
+                  <>
+                    <ActivityIndicator size="small" color="#7C3AED" />
+                    <Text style={styles.modalShareBtnText}>Generating PDF...</Text>
+                  </>
+                ) : (
+                  <>
+                    <Feather name="share-2" size={14} color="#7C3AED" />
+                    <Text style={styles.modalShareBtnText}>Share / Print (PDF)</Text>
+                  </>
+                )}
               </TouchableOpacity>
 
               {selectedInvoice && !selectedInvoice.isVoided && session.role === 'owner' && (
@@ -1305,7 +1342,11 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
         onRequestClose={() => setRepayModalVisible(false)}
       >
         <View style={styles.modalBackdrop}>
-          <View style={styles.repaySheet}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={{ width: '100%', alignItems: 'center' }}
+          >
+            <View style={styles.repaySheet}>
             <View style={styles.sheetHandle} />
 
             <View style={styles.sheetHeader}>
@@ -1386,8 +1427,10 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
               </TouchableOpacity>
             </View>
           </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
+      </KeyboardAvoidingView>
     </View>
   );
 };
@@ -1469,7 +1512,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF',
     borderRadius: 16,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    height: 48,
     marginBottom: 10,
     boxShadow: '0px 2px 8px rgba(0,0,0,0.04)',
   },

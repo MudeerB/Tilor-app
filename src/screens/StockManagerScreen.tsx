@@ -10,6 +10,9 @@ import {
   StatusBar,
   Alert,
   RefreshControl,
+  KeyboardAvoidingView,
+  Keyboard,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -289,6 +292,7 @@ export const StockManagerScreen: React.FC<StockManagerScreenProps> = ({
   }, []);
 
   const handleSaveProductEdit = async () => {
+    Keyboard.dismiss();
     if (!editingTile || !editName.trim()) {
       Alert.alert('Required', 'Please enter tile name.');
       return;
@@ -443,19 +447,25 @@ export const StockManagerScreen: React.FC<StockManagerScreenProps> = ({
       <StatusBar barStyle="light-content" />
 
       {/* Main Content */}
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            colors={['#7C3AED']}
-            tintColor="#7C3AED"
-          />
-        }
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              colors={['#7C3AED']}
+              tintColor="#7C3AED"
+            />
+          }
+        >
         {/* Header with Generous Hierarchy and Spacing */}
         <LinearGradient
           colors={['#6D28D9', '#7C3AED', '#A855F7']}
@@ -532,9 +542,13 @@ export const StockManagerScreen: React.FC<StockManagerScreenProps> = ({
               placeholderTextColor="#A0AEC0"
               value={search}
               onChangeText={setSearch}
+              returnKeyType="search"
+              onSubmitEditing={() => Keyboard.dismiss()}
+              autoCapitalize="none"
+              autoCorrect={false}
             />
             {search.length > 0 && (
-              <TouchableOpacity onPress={() => setSearch('')}>
+              <TouchableOpacity onPress={() => setSearch('')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                 <Feather name="x" size={14} color="#A0AEC0" />
               </TouchableOpacity>
             )}
@@ -670,20 +684,29 @@ export const StockManagerScreen: React.FC<StockManagerScreenProps> = ({
           <View style={{ height: 32 }} />
         </View>
       </ScrollView>
+    </KeyboardAvoidingView>
 
       {/* ── Edit Product Stock Modal ── */}
       <Modal visible={editModalVisible} transparent animationType="slide" onRequestClose={() => setEditModalVisible(false)}>
-        <View style={styles.modalBackdrop}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalBackdrop}
+        >
           <View style={styles.sheetContent}>
             <View style={styles.sheetHandle} />
             <View style={styles.sheetHeader}>
               <Text style={styles.sheetTitle}>Edit Product &amp; Stock</Text>
-              <TouchableOpacity onPress={() => setEditModalVisible(false)} style={styles.modalCloseBtn}>
+              <TouchableOpacity onPress={() => { Keyboard.dismiss(); setEditModalVisible(false); }} style={styles.modalCloseBtn}>
                 <Feather name="x" size={18} color="#6B7280" />
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
+            <ScrollView
+              style={{ maxHeight: 420 }}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+            >
               <Text style={styles.formLabel}>PRODUCT NAME</Text>
               <TextInput style={styles.formInput} value={editName} onChangeText={setEditName} />
 
@@ -750,7 +773,7 @@ export const StockManagerScreen: React.FC<StockManagerScreenProps> = ({
               </TouchableOpacity>
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ── Confirm Delete Product Modal ── */}
@@ -809,9 +832,9 @@ const styles = StyleSheet.create({
   tabToggleBtnActive: { backgroundColor: '#7C3AED' },
   tabToggleText: { fontSize: 11, fontWeight: 'bold', color: '#6B7280' },
   tabToggleTextActive: { color: '#FFF' },
-  searchBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 14, borderWidth: 1, borderColor: '#E9D5FF', boxShadow: '0px 2px 8px rgba(0,0,0,0.04)' },
+  searchBar: { height: 48, flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', borderRadius: 16, paddingHorizontal: 14, marginBottom: 14, borderWidth: 1, borderColor: '#E9D5FF', boxShadow: '0px 2px 8px rgba(0,0,0,0.04)' },
   searchIcon: { marginRight: 8 },
-  searchInput: { flex: 1, fontSize: 12, color: '#1A1A2E' },
+  searchInput: { flex: 1, height: '100%', fontSize: 12, color: '#1A1A2E' },
 
   // Stats Row
   statsRow: { flexDirection: 'row', gap: 10, marginBottom: 14 },

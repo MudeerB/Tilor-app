@@ -10,6 +10,8 @@ import {
   TextInput,
   RefreshControl,
   Platform,
+  KeyboardAvoidingView,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -278,9 +280,13 @@ export const ActivityLogScreen: React.FC<ActivityLogScreenProps> = ({ session, o
               placeholderTextColor="rgba(255, 255, 255, 0.6)"
               value={searchQuery}
               onChangeText={setSearchQuery}
+              returnKeyType="search"
+              onSubmitEditing={() => Keyboard.dismiss()}
+              autoCapitalize="none"
+              autoCorrect={false}
             />
             {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                 <Feather name="x-circle" size={18} color="rgba(255,255,255,0.6)" />
               </TouchableOpacity>
             )}
@@ -334,11 +340,19 @@ export const ActivityLogScreen: React.FC<ActivityLogScreenProps> = ({ session, o
   };
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       {/* List */}
       <View style={styles.innerContent}>
         {loading ? (
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.listContent}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.listContent}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+          >
             {renderHeader()}
             <View style={{ paddingHorizontal: 16, paddingTop: 14 }}>
               <ActivityLogSkeleton />
@@ -353,6 +367,8 @@ export const ActivityLogScreen: React.FC<ActivityLogScreenProps> = ({ session, o
             renderItem={renderLogItem}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}
@@ -378,7 +394,7 @@ export const ActivityLogScreen: React.FC<ActivityLogScreenProps> = ({ session, o
           />
         )}
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 };
 
