@@ -689,7 +689,7 @@ export const StockManagerScreen: React.FC<StockManagerScreenProps> = ({
       {/* ── Edit Product Stock Modal ── */}
       <Modal visible={editModalVisible} transparent animationType="slide" onRequestClose={() => setEditModalVisible(false)}>
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalBackdrop}
         >
           <View style={styles.sheetContent}>
@@ -702,7 +702,8 @@ export const StockManagerScreen: React.FC<StockManagerScreenProps> = ({
             </View>
 
             <ScrollView
-              style={{ maxHeight: 420 }}
+              style={{ flexShrink: 1 }}
+              contentContainerStyle={{ paddingBottom: 24 }}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag"
@@ -950,7 +951,7 @@ const styles = StyleSheet.create({
 
   // Modals
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  sheetContent: { backgroundColor: '#FFF', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 24 },
+  sheetContent: { backgroundColor: '#FFF', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 24, width: '100%', maxHeight: '90%' },
   sheetHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#E2E8F0', alignSelf: 'center', marginBottom: 12 },
   sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
   sheetTitle: { fontSize: 16, fontWeight: 'bold', color: '#1A1A2E' },

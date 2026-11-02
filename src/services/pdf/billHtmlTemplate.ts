@@ -117,9 +117,9 @@ export function formatDateTime(dateStr: string | undefined | null): { date: stri
 }
 
 /**
- * Generates a complete, self-contained, print-ready HTML document for an invoice.
+ * Generates the formal desktop A4 print-ready HTML document for an invoice.
  */
-export function generateBillHtml(inv: InvoicePrintData): string {
+export function generateDesktopBillHtml(inv: InvoicePrintData): string {
   const safeInvoiceId = escapeHtml(inv.invoiceId || 'INV-001');
   const { date: formattedDate, time: formattedTime } = formatDateTime(inv.date);
   const safeCustomerName = escapeHtml(inv.customerName || 'Retail Customer');
@@ -992,3 +992,893 @@ export function generateBillHtml(inv: InvoicePrintData): string {
 </body>
 </html>`;
 }
+
+/**
+ * Generates an ultra-crisp, mobile-optimized fintech bill HTML document.
+ * Specially tailored for mobile phone screens, WhatsApp PDF sharing, and thermal POS printers:
+ * - Single-column vertical card architecture (fits phone width without pinching/zooming)
+ * - Large, legible typography (Plus Jakarta Sans + JetBrains Mono)
+ * - Prominent Hero Grand Total display with status pill
+ * - Card-based item layout with room badge, variant, size, sqft, boxes, and rate
+ * - High-contrast Khatabook deposit and debt cards
+ */
+export function generateMobileBillHtml(inv: InvoicePrintData): string {
+  const safeInvoiceId = escapeHtml(inv.invoiceId || 'INV-001');
+  const { date: formattedDate, time: formattedTime } = formatDateTime(inv.date);
+  const safeCustomerName = escapeHtml(inv.customerName || 'Retail Customer');
+  const safeCustomerPhone = escapeHtml(inv.customerPhone || '');
+  const safeCustomerGst = escapeHtml(inv.customerGst || '');
+  const safeCustomerAddress = escapeHtml(inv.customerAddress || '');
+  const safeCreatedBy = escapeHtml(inv.createdByName || '');
+  const safeTxnRef = escapeHtml(inv.txnRef || '');
+
+  const shopName = escapeHtml(inv.shopName || 'Tilor Tiles & Ceramics');
+  const shopAddress = escapeHtml(inv.shopAddress || 'Tile & Sanitaryware Commercial Hub, Main Ring Road');
+  const shopPhone = escapeHtml(inv.shopPhone || '+91 98765 43210');
+  const shopEmail = escapeHtml(inv.shopEmail || 'support@tilor.app');
+  const shopGst = escapeHtml(inv.shopGst || '27AABCT9981A1ZP');
+
+  const subtotal = Number(inv.subtotal) || 0;
+  const discount = Number(inv.discount) || 0;
+  const gst = Number(inv.gst) || 0;
+  const total = Number(inv.total) || (subtotal - discount + gst);
+  const paymentMethod = (inv.paymentMethod || 'cash').toUpperCase();
+  const isCredit = inv.paymentMethod === 'credit' || !!inv.creditDetail;
+  const isGstBill = gst > 0;
+
+  // Status Badge
+  let statusBadgeHtml = '';
+  if (isCredit && inv.creditDetail && inv.creditDetail.debt > 0) {
+    statusBadgeHtml = `
+      <span class="m-badge m-badge-amber">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        CREDIT SALE
+      </span>`;
+  } else {
+    statusBadgeHtml = `
+      <span class="m-badge m-badge-emerald">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+        PAID IN FULL
+      </span>`;
+  }
+
+  // Tax Breakdown Rows
+  let taxRowsHtml = '';
+  if (isGstBill) {
+    if (inv.gstType === 'igst') {
+      taxRowsHtml = `
+        <div class="m-summary-row">
+          <span class="m-summary-label">Integrated GST (18%)</span>
+          <span class="m-summary-val font-mono">${formatInr(gst)}</span>
+        </div>`;
+    } else {
+      const halfGst = gst / 2;
+      taxRowsHtml = `
+        <div class="m-summary-row">
+          <span class="m-summary-label">CGST (9%)</span>
+          <span class="m-summary-val font-mono">${formatInr(halfGst)}</span>
+        </div>
+        <div class="m-summary-row">
+          <span class="m-summary-label">SGST (9%)</span>
+          <span class="m-summary-val font-mono">${formatInr(halfGst)}</span>
+        </div>`;
+    }
+  } else {
+    taxRowsHtml = `
+      <div class="m-summary-row">
+        <span class="m-summary-label">Tax (Non-GST Retail)</span>
+        <span class="m-summary-val font-mono">₹0.00</span>
+      </div>`;
+  }
+
+  // Items Cards
+  const items = Array.isArray(inv.items) ? inv.items : [];
+  const itemsCardsHtml = items.map((item, index) => {
+    const safeName = escapeHtml(item.name || 'Tile Item');
+    const safeVariant = item.variantLabel ? escapeHtml(item.variantLabel) : '';
+    const safeBrand = item.brand ? escapeHtml(item.brand) : '';
+    const safeSize = item.size ? escapeHtml(item.size) : '';
+    const safeRoom = item.roomName ? escapeHtml(item.roomName) : '';
+    const boxes = Number(item.boxes) || 1;
+    const pricePerBox = Number(item.pricePerBox) || 0;
+    const rowTotal = Number(item.total) || (boxes * pricePerBox);
+
+    const itemSqft = item.sqft !== undefined
+      ? item.sqft
+      : (item.sqftPerBox ? Math.round(boxes * item.sqftPerBox * 10) / 10 : (item.size?.includes('12') ? boxes * 9 : boxes * 16));
+    const itemTiles = item.tiles !== undefined
+      ? item.tiles
+      : (item.tilesPerBox ? boxes * item.tilesPerBox : (item.size?.includes('12') ? boxes * 6 : boxes * 4));
+
+    const pills: string[] = [];
+    if (safeVariant) pills.push(`<span class="m-pill m-pill-variant">${safeVariant}</span>`);
+    if (safeSize) pills.push(`<span class="m-pill m-pill-size">${safeSize}</span>`);
+    if (itemSqft) pills.push(`<span class="m-pill m-pill-metric">📐 ${itemSqft} sq.ft</span>`);
+    if (itemTiles) pills.push(`<span class="m-pill m-pill-metric">🧱 ${itemTiles} tiles</span>`);
+    if (safeBrand) pills.push(`<span class="m-pill m-pill-brand">Brand: ${safeBrand}</span>`);
+
+    return `
+      <div class="m-item-card">
+        <div class="m-item-header">
+          <div class="m-room-badge"><span class="m-room-icon">🏠</span> <span>${(safeRoom || 'GENERAL ROOM').toUpperCase()}</span></div>
+          <span class="m-item-num">Item #${index + 1}</span>
+        </div>
+        <div class="m-item-body">
+          <div class="m-item-name">${safeName}</div>
+          <div class="m-item-total font-mono">${formatInr(rowTotal)}</div>
+        </div>
+        ${pills.length > 0 ? `<div class="m-item-pills">${pills.join(' ')}</div>` : ''}
+        <div class="m-item-rate-calc font-mono">
+          <span class="m-rate-tag">📦 ${boxes} ${boxes === 1 ? 'box' : 'boxes'}</span>
+          <span class="m-rate-mult">×</span>
+          <span class="m-rate-tag">${formatInr(pricePerBox)} / box</span>
+        </div>
+      </div>`;
+  }).join('');
+
+  const renderedItemsHtml = itemsCardsHtml || `
+    <div class="m-empty-items">No product items listed in this invoice.</div>`;
+
+  // Khatabook Ledger Block
+  let khatabookBlockHtml = '';
+  if (isCredit && inv.creditDetail) {
+    const depositPaid = Number(inv.creditDetail.depositPaid) || 0;
+    const debt = Number(inv.creditDetail.debt) || 0;
+    const safeDueDate = escapeHtml(inv.creditDetail.dueDate || 'In 30 days');
+
+    khatabookBlockHtml = `
+      <div class="m-khatabook-box">
+        <div class="m-khatabook-header">
+          <div class="m-khatabook-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+            KHATABOOK CREDIT RECORD
+          </div>
+          <span class="m-khatabook-due">Due: <strong>${safeDueDate}</strong></span>
+        </div>
+        <div class="m-khatabook-grid">
+          <div class="m-kb-card m-kb-paid">
+            <div class="m-kb-label">✓ Deposit Collected</div>
+            <div class="m-kb-val font-mono">${formatInr(depositPaid)}</div>
+            <div class="m-kb-sub">Paid via Cash/UPI</div>
+          </div>
+          <div class="m-kb-card m-kb-debt">
+            <div class="m-kb-label">⚠ Outstanding Debt</div>
+            <div class="m-kb-val font-mono">${formatInr(debt)}</div>
+            <div class="m-kb-sub">Remaining to collect</div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Bill #${safeInvoiceId} - ${shopName}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    :root {
+      --primary: #7C3AED;
+      --primary-dark: #6D28D9;
+      --primary-subtle: #F5F3FF;
+      --primary-border: #E9D5FF;
+      --text-main: #0F172A;
+      --text-body: #334155;
+      --text-muted: #64748B;
+      --text-light: #94A3B8;
+      --border: #E2E8F0;
+      --border-subtle: #F1F5F9;
+      --bg-light: #F8FAFC;
+      --emerald: #059669;
+      --emerald-bg: #ECFDF5;
+      --rose: #E11D48;
+      --rose-bg: #FFF1F2;
+      --amber: #B45309;
+      --amber-bg: #FEF3C7;
+    }
+
+    @page {
+      size: portrait;
+      margin: 8mm 6mm;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      font-size: 12.5px;
+      line-height: 1.45;
+      color: var(--text-body);
+      background-color: #F8FAFC;
+      margin: 0;
+      padding: 12px 8px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .font-mono {
+      font-family: 'JetBrains Mono', Consolas, Monaco, "Courier New", monospace;
+    }
+
+    .mobile-container {
+      width: 100%;
+      max-width: 480px;
+      background: #FFFFFF;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 18px 16px;
+      box-shadow: 0 4px 18px rgba(15, 23, 42, 0.05);
+    }
+
+    /* ── Header ─────────────────────────────────────────── */
+    .m-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1.5px solid var(--border-subtle);
+      padding-bottom: 14px;
+      margin-bottom: 14px;
+      gap: 12px;
+    }
+
+    .m-brand-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .m-brand-logo {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #FFFFFF;
+      box-shadow: 0 3px 8px rgba(124, 58, 237, 0.25);
+      flex-shrink: 0;
+    }
+
+    .m-brand-name {
+      font-size: 16px;
+      font-weight: 800;
+      color: var(--text-main);
+      letter-spacing: -0.3px;
+    }
+
+    .m-brand-name span {
+      color: var(--primary);
+    }
+
+    .m-shop-subtitle {
+      font-size: 10.5px;
+      color: var(--text-muted);
+      font-weight: 500;
+      line-height: 1.4;
+    }
+
+    .m-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 9.5px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .m-badge-emerald {
+      background: var(--emerald-bg);
+      color: var(--emerald);
+      border: 1px solid #A7F3D0;
+    }
+
+    .m-badge-amber {
+      background: var(--amber-bg);
+      color: var(--amber);
+      border: 1px solid #FDE68A;
+    }
+
+    /* ── Hero Total Box ──────────────────────────────────── */
+    .m-hero-card {
+      background: linear-gradient(180deg, #FAF5FF 0%, #F5F3FF 100%);
+      border: 1.5px solid var(--primary-border);
+      border-radius: 16px;
+      padding: 16px 14px;
+      text-align: center;
+      margin-bottom: 14px;
+    }
+
+    .m-hero-label {
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--primary-dark);
+      margin-bottom: 4px;
+    }
+
+    .m-hero-amount {
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--text-main);
+      letter-spacing: -0.5px;
+      margin-bottom: 6px;
+    }
+
+    .m-hero-meta {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-size: 11px;
+      color: var(--text-muted);
+      flex-wrap: wrap;
+    }
+
+    .m-hero-meta strong {
+      color: var(--text-body);
+    }
+
+    /* ── Store & Customer Details Card ───────────────────── */
+    .m-info-card {
+      background: var(--bg-light);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px 14px;
+      margin-bottom: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .m-customer-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px dashed var(--border);
+      padding-bottom: 8px;
+    }
+
+    .m-customer-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .m-customer-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #7C3AED, #6D28D9);
+      color: #FFFFFF;
+      font-weight: 800;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .m-customer-name {
+      font-size: 13.5px;
+      font-weight: 800;
+      color: var(--text-main);
+    }
+
+    .m-customer-phone {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .m-info-detail-line {
+      font-size: 11px;
+      color: var(--text-body);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .m-info-detail-line span.label {
+      color: var(--text-muted);
+    }
+
+    .m-info-detail-line span.value {
+      font-weight: 600;
+      color: var(--text-main);
+      text-align: right;
+    }
+
+    /* ── Order Items ─────────────────────────────────────── */
+    .m-section-title {
+      font-size: 10.5px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      color: var(--text-light);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .m-item-card {
+      background: #FFFFFF;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px 14px;
+      margin-bottom: 10px;
+      page-break-inside: avoid;
+      transition: all 0.2s ease;
+    }
+
+    .m-item-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+
+    .m-room-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: #F3E8FF;
+      border: 1px solid #DDD6FE;
+      color: #6D28D9;
+      font-size: 9.5px;
+      font-weight: 800;
+      letter-spacing: 0.4px;
+      padding: 2px 7px;
+      border-radius: 4px;
+    }
+
+    .m-item-num {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--text-light);
+    }
+
+    .m-item-body {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+
+    .m-item-name {
+      font-size: 14px;
+      font-weight: 800;
+      color: var(--text-main);
+    }
+
+    .m-item-total {
+      font-size: 15px;
+      font-weight: 800;
+      color: var(--text-main);
+      flex-shrink: 0;
+    }
+
+    .m-item-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-bottom: 8px;
+    }
+
+    .m-pill {
+      font-size: 9.5px;
+      font-weight: 600;
+      background: #EDF2F7;
+      color: #475569;
+      padding: 2px 7px;
+      border-radius: 5px;
+    }
+
+    .m-pill-variant {
+      background: #FEF3C7;
+      color: #92400E;
+      border: 1px solid #FDE68A;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .m-pill-metric {
+      background: #EDE9FE;
+      color: #5B21B6;
+      border: 1px solid #DDD6FE;
+      font-weight: 700;
+    }
+
+    .m-pill-size {
+      background: #F1F5F9;
+      color: #334155;
+      border: 1px solid #E2E8F0;
+      font-weight: 700;
+    }
+
+    .m-pill-brand {
+      background: #F8FAFC;
+      color: #64748B;
+      border: 1px solid #E2E8F0;
+    }
+
+    .m-item-rate-calc {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: var(--text-muted);
+      border-top: 1px dashed var(--border-subtle);
+      padding-top: 6px;
+    }
+
+    .m-rate-tag {
+      background: #F8FAFC;
+      border: 1px solid var(--border);
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-weight: 600;
+      color: var(--text-body);
+    }
+
+    .m-rate-mult {
+      font-size: 10px;
+      color: var(--text-light);
+    }
+
+    .m-empty-items {
+      text-align: center;
+      padding: 20px;
+      color: var(--text-light);
+      font-size: 12px;
+      background: var(--bg-light);
+      border-radius: 12px;
+      border: 1px dashed var(--border);
+    }
+
+    /* ── Khatabook Ledger Block ──────────────────────────── */
+    .m-khatabook-box {
+      background: #FAF5FF;
+      border: 1.5px solid var(--primary-border);
+      border-radius: 14px;
+      padding: 12px 14px;
+      margin-bottom: 14px;
+      page-break-inside: avoid;
+    }
+
+    .m-khatabook-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .m-khatabook-title {
+      font-size: 10.5px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--primary-dark);
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .m-khatabook-due {
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+
+    .m-khatabook-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .m-kb-card {
+      background: #FFFFFF;
+      border-radius: 10px;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+    }
+
+    .m-kb-paid {
+      border-color: #A7F3D0;
+      background: #F0FDF4;
+    }
+
+    .m-kb-debt {
+      border-color: #FECDD3;
+      background: #FFF1F2;
+    }
+
+    .m-kb-label {
+      font-size: 9.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      margin-bottom: 2px;
+    }
+
+    .m-kb-paid .m-kb-label { color: #059669; }
+    .m-kb-debt .m-kb-label { color: #E11D48; }
+
+    .m-kb-val {
+      font-size: 15px;
+      font-weight: 800;
+    }
+
+    .m-kb-paid .m-kb-val { color: #059669; }
+    .m-kb-debt .m-kb-val { color: #E11D48; }
+
+    .m-kb-sub {
+      font-size: 9px;
+      color: var(--text-muted);
+      margin-top: 1px;
+    }
+
+    /* ── Financial Summary Card ──────────────────────────── */
+    .m-summary-card {
+      background: #FFFFFF;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px 14px;
+      margin-bottom: 14px;
+      page-break-inside: avoid;
+    }
+
+    .m-summary-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 5px 0;
+      font-size: 11.5px;
+      color: var(--text-muted);
+    }
+
+    .m-summary-val {
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .m-summary-discount {
+      color: var(--emerald);
+      font-weight: 700;
+    }
+
+    .m-grand-total-box {
+      margin-top: 8px;
+      padding: 12px 14px;
+      background: linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%);
+      border-radius: 10px;
+      color: #FFFFFF;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 4px 12px rgba(124, 58, 237, 0.25);
+    }
+
+    .m-grand-total-label {
+      font-size: 11.5px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+
+    .m-grand-total-val {
+      font-size: 19px;
+      font-weight: 800;
+      letter-spacing: -0.3px;
+    }
+
+    /* ── Terms & Footer ──────────────────────────────────── */
+    .m-terms-box {
+      font-size: 9.5px;
+      color: var(--text-muted);
+      line-height: 1.45;
+      margin-bottom: 14px;
+      background: var(--bg-light);
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      page-break-inside: avoid;
+    }
+
+    .m-terms-box ol {
+      padding-left: 14px;
+      margin-top: 3px;
+    }
+
+    .m-footer {
+      border-top: 1px dashed var(--border);
+      padding-top: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      font-size: 9.5px;
+      color: var(--text-light);
+      page-break-inside: avoid;
+    }
+
+    .m-signatory-box {
+      text-align: right;
+    }
+
+    .m-signatory-line {
+      width: 120px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 4px;
+      margin-left: auto;
+    }
+
+    @media print {
+      body {
+        background: #FFFFFF !important;
+        padding: 0 !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+      .mobile-container {
+        border: none !important;
+        box-shadow: none !important;
+        max-width: 100% !important;
+        padding: 4px !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="mobile-container">
+    
+    <!-- ── Header ─────────────────────────────────────────────── -->
+    <header class="m-header">
+      <div class="m-brand-wrap">
+        <div class="m-brand-logo">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="8" height="8" rx="2"></rect>
+            <rect x="13" y="3" width="8" height="8" rx="2"></rect>
+            <rect x="3" y="13" width="8" height="8" rx="2"></rect>
+            <rect x="13" y="13" width="8" height="8" rx="2"></rect>
+          </svg>
+        </div>
+        <div>
+          <div class="m-brand-name">Tilor<span>.</span> <span style="font-size:12px; color:var(--text-body); font-weight:700;">${shopName}</span></div>
+          <div class="m-shop-subtitle">${shopAddress}</div>
+          <div class="m-shop-subtitle font-mono">GSTIN: ${shopGst} &bull; Ph: ${shopPhone}</div>
+        </div>
+      </div>
+      <div>
+        ${statusBadgeHtml}
+      </div>
+    </header>
+
+    <!-- ── Hero Total Box ────────────────────────────────────── -->
+    <section class="m-hero-card">
+      <div class="m-hero-label">${isGstBill ? 'TAX INVOICE' : 'RETAIL BILL'} &bull; TOTAL AMOUNT</div>
+      <div class="m-hero-amount font-mono">${formatInr(total)}</div>
+      <div class="m-hero-meta">
+        <span>Bill ID: <strong class="font-mono">#${safeInvoiceId}</strong></span>
+        <span>&bull;</span>
+        <span>${formattedDate}${formattedTime ? ' ' + formattedTime : ''}</span>
+      </div>
+    </section>
+
+    <!-- ── Customer & Dispatch Info ───────────────────────────── -->
+    <section class="m-info-card">
+      <div class="m-customer-row">
+        <div class="m-customer-info">
+          <div class="m-customer-avatar">${safeCustomerName.charAt(0).toUpperCase()}</div>
+          <div>
+            <div class="m-customer-name">${safeCustomerName}</div>
+            <div class="m-customer-phone">${safeCustomerPhone ? '+91 ' + safeCustomerPhone : 'Retail Customer'}</div>
+          </div>
+        </div>
+        <span class="m-badge" style="background:#F3E8FF; color:#6D28D9; border:1px solid #DDD6FE;">${paymentMethod}</span>
+      </div>
+      ${safeCustomerAddress ? `
+        <div class="m-info-detail-line">
+          <span class="label">Delivery Address</span>
+          <span class="value">${safeCustomerAddress}</span>
+        </div>` : ''}
+      ${safeCustomerGst ? `
+        <div class="m-info-detail-line">
+          <span class="label">Customer GSTIN</span>
+          <span class="value font-mono">${safeCustomerGst}</span>
+        </div>` : ''}
+      <div class="m-info-detail-line">
+        <span class="label">Supply Type</span>
+        <span class="value">${isGstBill ? 'B2B / Taxable Supply' : 'Direct Consumer Retail'}</span>
+      </div>
+      ${safeTxnRef ? `
+        <div class="m-info-detail-line">
+          <span class="label">Txn / UTR Ref</span>
+          <span class="value font-mono">${safeTxnRef}</span>
+        </div>` : ''}
+      ${safeCreatedBy ? `
+        <div class="m-info-detail-line">
+          <span class="label">Billed By</span>
+          <span class="value">${safeCreatedBy}</span>
+        </div>` : ''}
+    </section>
+
+    <!-- ── Items List ─────────────────────────────────────────── -->
+    <div class="m-section-title">
+      <span>Order Items (${items.length})</span>
+      <span>Qty & Total</span>
+    </div>
+    ${renderedItemsHtml}
+
+    <!-- ── Khatabook Credit Ledger ────────────────────────────── -->
+    ${khatabookBlockHtml}
+
+    <!-- ── Financial Summary ──────────────────────────────────── -->
+    <section class="m-summary-card">
+      <div class="m-summary-row">
+        <span class="m-summary-label">Items Subtotal</span>
+        <span class="m-summary-val font-mono">${formatInr(subtotal)}</span>
+      </div>
+      ${discount > 0 ? `
+        <div class="m-summary-row">
+          <span class="m-summary-label">Promotional Discount</span>
+          <span class="m-summary-val m-summary-discount font-mono">- ${formatInr(discount)}</span>
+        </div>` : ''}
+      ${taxRowsHtml}
+      <div class="m-grand-total-box">
+        <span class="m-grand-total-label">Grand Total</span>
+        <span class="m-grand-total-val font-mono">${formatInr(total)}</span>
+      </div>
+    </section>
+
+    <!-- ── Terms ──────────────────────────────────────────────── -->
+    <div class="m-terms-box">
+      <strong>Terms & Conditions:</strong>
+      <ol>
+        <li>Goods once sold will not be accepted or exchanged without the original bill.</li>
+        <li>Inspect tile batch, color, and shade uniformity prior to fixing.</li>
+        <li>Disputes subject to local merchant jurisdiction.</li>
+      </ol>
+    </div>
+
+    <!-- ── Footer ─────────────────────────────────────────────── -->
+    <footer class="m-footer">
+      <div>
+        <strong>Tilor Store Billing Suite</strong> &bull; Authenticated Digital Bill
+      </div>
+      <div class="m-signatory-box">
+        <div class="m-signatory-line"></div>
+        <div>Authorized Signatory</div>
+      </div>
+    </footer>
+
+  </div>
+</body>
+</html>`;
+}
+
+/**
+ * Master generator that returns either the mobile fintech receipt layout
+ * or the desktop A4 tabular layout based on the requested format.
+ */
+export function generateBillHtml(
+  inv: InvoicePrintData,
+  layout: 'mobile' | 'desktop' = 'mobile'
+): string {
+  if (layout === 'desktop') {
+    return generateDesktopBillHtml(inv);
+  }
+  return generateMobileBillHtml(inv);
+}
+

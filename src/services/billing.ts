@@ -108,6 +108,11 @@ export const billingService = {
         customerName: sanitizeCustomerName(payload.customerName),
         customerAddress: sanitizeAddress(payload.customerAddress),
         txnRef: sanitizeTxnRef(payload.txnRef),
+        items: payload.items.map(i => ({
+          ...i,
+          roomName: i.roomName || (i as any).room_name || 'Living Room',
+          room_name: i.roomName || (i as any).room_name || 'Living Room',
+        })),
       };
 
       // Execute the entire checkout atomically on the server
@@ -145,7 +150,7 @@ export const billingService = {
           boxes: i.boxes,
           pricePerBox: i.pricePerBox,
           total: i.boxes * i.pricePerBox,
-          roomName: (i as any).roomName || null,
+          roomName: (i as any).roomName || (i as any).room_name || 'Living Room',
           sqft: (i as any).sqft,
           tiles: (i as any).tiles,
           sqftPerBox: (i as any).sqftPerBox,
@@ -280,7 +285,8 @@ export const billingService = {
             size,
             boxes,
             price_per_box,
-            total_amount
+            total_amount,
+            room_name
           )
         `)
         .eq('shop_id', shopId)

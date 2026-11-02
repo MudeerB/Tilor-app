@@ -272,7 +272,7 @@ const InvoiceTimelineCard = React.memo<InvoiceTimelineCardProps>(({
   const isOverdue = isCredit && inv.creditDetail?.dueDate &&
     new Date(inv.creditDetail.dueDate) < new Date() && outstanding > 0;
 
-  const itemSummary = inv.items.slice(0, 2).map(i => i.name).join(', ');
+  const itemSummary = inv.items.slice(0, 2).map(i => i.roomName ? `${i.roomName}: ${i.name}` : i.name).join(', ');
   const moreItemsCount = inv.items.length > 2 ? ` +${inv.items.length - 2} more` : '';
 
   return (
@@ -1109,7 +1109,10 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
         animationType="fade"
         onRequestClose={() => setDispatchModalVisible(false)}
       >
-        <View style={styles.modalBackdrop}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalBackdrop}
+        >
           <View style={[styles.repaySheet, { padding: 20 }]}>
             <View style={styles.sheetHeader}>
               <View>
@@ -1124,7 +1127,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
             {isDispatching && dispatchItems.length === 0 ? (
               <ActivityIndicator size="small" color="#7C3AED" style={{ marginVertical: 32 }} />
             ) : (
-              <ScrollView style={{ maxHeight: 400 }} showsVerticalScrollIndicator={false}>
+              <ScrollView style={{ flexShrink: 1, maxHeight: 420 }} contentContainerStyle={{ paddingBottom: 20 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
                 <View style={{ marginBottom: 16 }}>
                   <Text style={styles.formLabel}>VEHICLE NUMBER (OPTIONAL)</Text>
                   <TextInput
@@ -1181,7 +1184,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
               </LinearGradient>
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ── Detailed Invoice View Modal ── */}
@@ -1231,7 +1234,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
                       <View style={{ flex: 1 }}>
                         <View style={styles.historyRoomBadge}>
                           <Text style={styles.historyRoomBadgeText}>
-                            🏠 {item.roomName || 'General / Store'}
+                            🏠 {item.roomName || 'General Room'}
                           </Text>
                         </View>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
@@ -1408,7 +1411,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
                 <View style={{ flex: 1 }}>
                   <Text style={styles.detailsRoomSub}>DESIGNATED ROOM / AREA</Text>
                   <Text style={styles.detailsRoomName}>
-                    {selectedItemForDetails?.roomName || 'General / Store'}
+                    {selectedItemForDetails?.roomName || 'General Room'}
                   </Text>
                 </View>
               </View>
@@ -1528,8 +1531,8 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
       >
         <View style={styles.modalBackdrop}>
           <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            style={{ width: '100%', alignItems: 'center' }}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={{ width: '100%', alignItems: 'center', justifyContent: 'flex-end', flex: 1 }}
           >
             <View style={styles.repaySheet}>
             <View style={styles.sheetHandle} />
@@ -1921,7 +1924,7 @@ const styles = StyleSheet.create({
   },
   detailsSheet: {
     width: '100%',
-    maxWidth: 380,
+    maxWidth: 480,
     backgroundColor: '#FFF',
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,

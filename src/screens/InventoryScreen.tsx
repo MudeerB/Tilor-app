@@ -905,7 +905,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       {/* ── Tile Detail / Adjust Modal ── */}
       <Modal visible={!!selectedTile} transparent animationType="slide" onRequestClose={() => setSelectedTile(null)}>
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalBackdrop}
         >
           <View style={styles.modalSheet}>
@@ -1263,17 +1263,17 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       {/* ── Add Product Modal ── */}
       <Modal visible={addModalVisible} transparent animationType="fade" onRequestClose={() => setAddModalVisible(false)}>
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalBackdrop}
         >
-          <View style={[styles.modalSheet, { borderRadius: 28 }]}>
+          <View style={[styles.modalSheet, { borderRadius: 28, maxHeight: '90%' }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Add New Product</Text>
               <TouchableOpacity onPress={() => setAddModalVisible(false)} style={styles.modalCloseBtn}>
                 <Feather name="x" size={18} color="#6B7280" />
               </TouchableOpacity>
             </View>
-            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 480 }} keyboardShouldPersistTaps="handled">
+            <ScrollView showsVerticalScrollIndicator={false} style={{ flexShrink: 1 }} contentContainerStyle={{ paddingBottom: 20 }} keyboardShouldPersistTaps="handled">
               {/* Feature #5: Inline Form Validation Error Banner */}
               {addError && (
                 <View style={styles.inlineFormError}>
@@ -1491,7 +1491,7 @@ const styles = StyleSheet.create({
   },
   // Modal
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalSheet: { backgroundColor: '#FFF', borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 24, maxHeight: '85%' },
+  modalSheet: { backgroundColor: '#FFF', borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 24, maxHeight: '85%', width: '100%' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
   modalTitle: { fontSize: 15, fontWeight: 'bold', color: '#1A1A2E' },
   modalCloseBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#F3F4F6', justifyContent: 'center', alignItems: 'center' },

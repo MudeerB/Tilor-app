@@ -680,7 +680,7 @@ export const CustomersScreen: React.FC<CustomersScreenProps> = ({
         onRequestClose={() => setAddModalVisible(false)}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalBackdrop}
         >
           <View style={styles.addModalBox}>
@@ -753,7 +753,7 @@ export const CustomersScreen: React.FC<CustomersScreenProps> = ({
         onRequestClose={() => setRepayModalVisible(false)}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalBackdrop}
         >
           <View style={styles.repaySheet}>

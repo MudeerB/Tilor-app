@@ -1126,14 +1126,17 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
       >
         <View style={styles.modalBackdrop}>
           <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            style={{ width: '100%', alignItems: 'center' }}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.keyboardAvoidSheet}
           >
             <View style={styles.checkoutSheet}>
               <View style={styles.sheetHandle} />
 
               <View style={styles.sheetHeader}>
-                <Text style={styles.sheetTitle}>Checkout Details</Text>
+                <View>
+                  <Text style={styles.sheetTitle}>Checkout Details</Text>
+                  <Text style={styles.sheetSubtitle}>Review &amp; Generate Tax Invoice</Text>
+                </View>
                 <TouchableOpacity
                   onPress={() => setCheckoutVisible(false)}
                   style={styles.modalCloseBtn}
@@ -1144,7 +1147,8 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
 
               <ScrollView
                 showsVerticalScrollIndicator={false}
-                style={{ maxHeight: 460 }}
+                style={styles.checkoutScrollBody}
+                contentContainerStyle={styles.checkoutScrollContent}
                 keyboardShouldPersistTaps="handled"
                 keyboardDismissMode="on-drag"
               >
@@ -1896,10 +1900,23 @@ const styles = StyleSheet.create({
   checkoutGrad: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 14, gap: 8 },
   checkoutText: { color: '#FFF', fontWeight: 'bold', fontSize: 14 },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  checkoutSheet: { backgroundColor: '#FFF', borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 24, maxHeight: '88%' },
+  keyboardAvoidSheet: { flex: 1, width: '100%', justifyContent: 'flex-end' },
+  checkoutSheet: {
+    width: '100%',
+    backgroundColor: '#FFF',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+    maxHeight: '92%',
+  },
+  checkoutScrollBody: { flexShrink: 1 },
+  checkoutScrollContent: { paddingBottom: 16 },
   sheetHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: '#E2E8F0', alignSelf: 'center', marginBottom: 12 },
   sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
   sheetTitle: { fontSize: 16, fontWeight: 'bold', color: '#1A1A2E' },
+  sheetSubtitle: { fontSize: 11, color: '#94A3B8', marginTop: 1 },
   modalCloseBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#F3F4F6', justifyContent: 'center', alignItems: 'center' },
   checkoutErrorBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FEF2F2', borderLeftWidth: 3, borderLeftColor: '#EF4444', padding: 10, borderRadius: 8, marginBottom: 12 },
   checkoutErrorText: { fontSize: 12, color: '#DC2626', fontWeight: '600', flex: 1 },
@@ -1994,7 +2011,7 @@ const styles = StyleSheet.create({
   cartItemSpecs: { fontSize: 10, color: '#64748B', marginTop: 1 },
 
   // View Details Modal Styles
-  specSheetContent: { backgroundColor: '#FFF', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 32, maxHeight: '85%' },
+  specSheetContent: { width: '100%', backgroundColor: '#FFF', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 32, maxHeight: '85%' },
   specSheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 },
   specSheetSubtitle: { fontSize: 10, color: '#6D28D9', fontWeight: '800', letterSpacing: 1 },
   specSheetTitle: { fontSize: 18, fontWeight: '800', color: '#0F172A', marginTop: 2 },
