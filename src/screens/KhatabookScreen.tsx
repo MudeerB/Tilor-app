@@ -19,7 +19,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
-import { NavTab } from '../components/BottomNavBar';
+import { BottomNavBar, NavTab } from '../components/BottomNavBar';
 import { UserSession } from '../services/storage';
 import { billingService } from '../services/billing';
 import { buildSafeWhatsAppUrl, buildSafeTelUrl } from '../utils/urlSecurity';
@@ -602,6 +602,9 @@ Thank you for your business!
                 <View style={styles.roleIndicator} />
                 <Text style={styles.roleText}>{session.role === 'owner' ? 'OWNER' : 'STAFF'}</Text>
               </View>
+              <TouchableOpacity style={styles.logoutBtn} onPress={onLogout} activeOpacity={0.7}>
+                <Feather name="log-out" size={15} color="#FFF" />
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -617,97 +620,107 @@ Thank you for your business!
           </View>
         </SafeAreaView>
       </LinearGradient>
-        {/* KPI Balance Summary */}
-        <View style={styles.kpiRow}>
-          <LinearGradient colors={['#FEF2F2', '#FFF5F5']} style={styles.kpiCardRed}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-              <Feather name="arrow-up-right" size={14} color="#DC2626" />
-              <Text style={styles.kpiLabelRed}>YOU WILL RECEIVE</Text>
-            </View>
-            <Text style={styles.kpiValRed}>₹{totalOutstanding.toLocaleString('en-IN')}</Text>
-            <Text style={styles.kpiSubRed}>{pendingDebtorsCount} customers owe balance</Text>
-          </LinearGradient>
 
-          <LinearGradient colors={['#F0FDF4', '#DCFCE7']} style={styles.kpiCardGreen}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-              <Feather name="arrow-down-left" size={14} color="#16A34A" />
-              <Text style={styles.kpiLabelGreen}>REPAYMENTS RECEIVED</Text>
-            </View>
-            <Text style={styles.kpiValGreen}>₹{totalCollected.toLocaleString('en-IN')}</Text>
-            <Text style={styles.kpiSubGreen}>Total deposits &amp; repayments</Text>
-          </LinearGradient>
-        </View>
+        {/* Content with standard 16px margins */}
+        <View style={styles.innerContent}>
+          {/* KPI Balance Summary */}
+          <View style={styles.kpiRow}>
+            <LinearGradient colors={['#FEF2F2', '#FFF5F5']} style={styles.kpiCardRed}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                <Feather name="arrow-up-right" size={14} color="#DC2626" />
+                <Text style={styles.kpiLabelRed}>YOU WILL RECEIVE</Text>
+              </View>
+              <Text style={styles.kpiValRed}>₹{totalOutstanding.toLocaleString('en-IN')}</Text>
+              <Text style={styles.kpiSubRed}>{pendingDebtorsCount} customers owe balance</Text>
+            </LinearGradient>
 
-        {isLoading ? (
-          <KhatabookSkeleton />
-        ) : (
-          <>
-            {/* Search Bar */}
-        <View style={styles.searchBar}>
-          <Feather name="search" size={15} color="#A0AEC0" style={styles.searchIcon} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search debtor name, phone number, GSTIN..."
-            placeholderTextColor="#A0AEC0"
-            value={search}
-            onChangeText={setSearch}
-            returnKeyType="search"
-            onSubmitEditing={() => Keyboard.dismiss()}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          {search.length > 0 && (
-            <TouchableOpacity onPress={() => setSearch('')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Feather name="x" size={14} color="#A0AEC0" />
-            </TouchableOpacity>
+            <LinearGradient colors={['#F0FDF4', '#DCFCE7']} style={styles.kpiCardGreen}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                <Feather name="arrow-down-left" size={14} color="#16A34A" />
+                <Text style={styles.kpiLabelGreen}>REPAYMENTS RECEIVED</Text>
+              </View>
+              <Text style={styles.kpiValGreen}>₹{totalCollected.toLocaleString('en-IN')}</Text>
+              <Text style={styles.kpiSubGreen}>Total deposits &amp; repayments</Text>
+            </LinearGradient>
+          </View>
+
+          {isLoading ? (
+            <KhatabookSkeleton />
+          ) : (
+            <>
+              {/* Search Bar */}
+              <View style={styles.searchBar}>
+                <Feather name="search" size={15} color="#A0AEC0" style={styles.searchIcon} />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search debtor name, phone number, GSTIN..."
+                  placeholderTextColor="#A0AEC0"
+                  value={search}
+                  onChangeText={setSearch}
+                  returnKeyType="search"
+                  onSubmitEditing={() => Keyboard.dismiss()}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                {search.length > 0 && (
+                  <TouchableOpacity onPress={() => setSearch('')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                    <Feather name="x" size={14} color="#A0AEC0" />
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Filter Chips */}
+              <View style={styles.filterRow}>
+                {(['pending', 'all', 'clear'] as DebtFilter[]).map(f => (
+                  <TouchableOpacity
+                    key={f}
+                    style={[styles.filterChip, debtFilter === f && styles.filterChipActive]}
+                    onPress={() => setDebtFilter(f)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.filterChipText, debtFilter === f && styles.filterChipTextActive]}>
+                      {f === 'pending' ? '⚠️ Outstanding Debt' : f === 'all' ? 'All Ledgers' : '✅ Clear Balance'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Debtors List */}
+              {filteredCustomers.length === 0 ? (
+                <View style={styles.emptyCard}>
+                  <Feather name="check-circle" size={36} color="#4ADE80" />
+                  <Text style={styles.emptyTitle}>No Pending Credit Accounts</Text>
+                  <Text style={styles.emptySub}>All customer credit balances are fully clear or match your search query.</Text>
+                </View>
+              ) : (
+                <View style={styles.debtorList}>
+                  {filteredCustomers.map(cust => (
+                    <DebtorCard
+                      key={cust.phone}
+                      cust={cust}
+                      debt={getCustomerDebt(cust)}
+                      onRepay={handleRepay}
+                      onCall={handleCall}
+                      onWhatsApp={handleWhatsApp}
+                      onExportLedger={handleExport}
+                      onOpenLedger={handleOpenLedger}
+                    />
+                  ))}
+                </View>
+              )}
+            </>
           )}
         </View>
-
-        {/* Filter Chips */}
-        <View style={styles.filterRow}>
-          {(['pending', 'all', 'clear'] as DebtFilter[]).map(f => (
-            <TouchableOpacity
-              key={f}
-              style={[styles.filterChip, debtFilter === f && styles.filterChipActive]}
-              onPress={() => setDebtFilter(f)}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.filterChipText, debtFilter === f && styles.filterChipTextActive]}>
-                {f === 'pending' ? '⚠️ Outstanding Debt' : f === 'all' ? 'All Ledgers' : '✅ Clear Balance'}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Debtors List */}
-        {filteredCustomers.length === 0 ? (
-          <View style={styles.emptyCard}>
-            <Feather name="check-circle" size={36} color="#4ADE80" />
-            <Text style={styles.emptyTitle}>No Pending Credit Accounts</Text>
-            <Text style={styles.emptySub}>All customer credit balances are fully clear or match your search query.</Text>
-          </View>
-        ) : (
-          <View style={styles.debtorList}>
-            {filteredCustomers.map(cust => (
-              <DebtorCard
-                key={cust.phone}
-                cust={cust}
-                debt={getCustomerDebt(cust)}
-                onRepay={handleRepay}
-                onCall={handleCall}
-                onWhatsApp={handleWhatsApp}
-                onExportLedger={handleExport}
-                onOpenLedger={handleOpenLedger}
-              />
-            ))}
-          </View>
-        )}
-        </>
-        )}
 
         <View style={{ height: 20 }} />
       </ScrollView>
     </KeyboardAvoidingView>
+
+    <BottomNavBar
+      activeTab={activeTab}
+      onTabPress={onTabChange}
+      isOwner={session.role === 'owner' || session.role === 'admin'}
+    />
 
       {/* ── Record Repayment Modal ── */}
       <Modal visible={repayModalVisible} transparent animationType="slide" onRequestClose={() => setRepayModalVisible(false)}>
@@ -868,31 +881,33 @@ Thank you for your business!
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.formLabel}>CUSTOMER NAME *</Text>
-            <TextInput style={styles.formInput} placeholder="e.g. Ramesh Patel" placeholderTextColor="#A0AEC0" value={entryName} onChangeText={setEntryName} />
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              <Text style={styles.formLabel}>CUSTOMER NAME *</Text>
+              <TextInput style={styles.formInput} placeholder="e.g. Ramesh Patel" placeholderTextColor="#A0AEC0" value={entryName} onChangeText={setEntryName} />
 
-            <Text style={styles.formLabel}>PHONE NUMBER *</Text>
-            <TextInput style={styles.formInput} keyboardType="phone-pad" placeholder="9876543210" placeholderTextColor="#A0AEC0" value={entryPhone} onChangeText={setEntryPhone} />
+              <Text style={styles.formLabel}>PHONE NUMBER *</Text>
+              <TextInput style={styles.formInput} keyboardType="phone-pad" placeholder="9876543210" placeholderTextColor="#A0AEC0" value={entryPhone} onChangeText={setEntryPhone} />
 
-            <Text style={styles.formLabel}>DEBT AMOUNT (₹) *</Text>
-            <TextInput style={styles.formInput} keyboardType="numeric" placeholder="e.g. 4500" placeholderTextColor="#A0AEC0" value={entryAmount} onChangeText={setEntryAmount} />
+              <Text style={styles.formLabel}>DEBT AMOUNT (₹) *</Text>
+              <TextInput style={styles.formInput} keyboardType="numeric" placeholder="e.g. 4500" placeholderTextColor="#A0AEC0" value={entryAmount} onChangeText={setEntryAmount} />
 
-            <Text style={styles.formLabel}>REFERENCE / NOTE</Text>
-            <TextInput style={styles.formInput} placeholder="e.g. 5 boxes kajaria tile credit" placeholderTextColor="#A0AEC0" value={entryNote} onChangeText={setEntryNote} />
+              <Text style={styles.formLabel}>REFERENCE / NOTE</Text>
+              <TextInput style={styles.formInput} placeholder="e.g. 5 boxes kajaria tile credit" placeholderTextColor="#A0AEC0" value={entryNote} onChangeText={setEntryNote} />
 
-            <Text style={styles.formLabel}>DUE DATE (Optional)</Text>
-            <TextInput style={styles.formInput} placeholder="YYYY-MM-DD" placeholderTextColor="#A0AEC0" value={entryDueDate} onChangeText={setEntryDueDate} />
+              <Text style={styles.formLabel}>DUE DATE (Optional)</Text>
+              <TextInput style={styles.formInput} placeholder="YYYY-MM-DD" placeholderTextColor="#A0AEC0" value={entryDueDate} onChangeText={setEntryDueDate} />
 
-            <View style={styles.dialogActions}>
-              <TouchableOpacity style={styles.dialogCancelBtn} onPress={() => setAddEntryVisible(false)}>
-                <Text style={styles.dialogCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.dialogSubmitBtn} onPress={handleAddManualEntry} activeOpacity={0.8}>
-                <LinearGradient colors={['#8B5CF6', '#6D28D9']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.dialogSubmitGrad}>
-                  <Text style={styles.dialogSubmitText}>Log Debt</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            </View>
+              <View style={styles.dialogActions}>
+                <TouchableOpacity style={styles.dialogCancelBtn} onPress={() => setAddEntryVisible(false)}>
+                  <Text style={styles.dialogCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.dialogSubmitBtn} onPress={handleAddManualEntry} activeOpacity={0.8}>
+                  <LinearGradient colors={['#8B5CF6', '#6D28D9']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.dialogSubmitGrad}>
+                    <Text style={styles.dialogSubmitText}>Log Debt</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -916,13 +931,22 @@ const styles = StyleSheet.create({
   roleBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12 },
   roleIndicator: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#4CAF50', marginRight: 6 },
   roleText: { color: '#FFF', fontSize: 9, fontWeight: 'bold', letterSpacing: 0.5 },
+  logoutBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   pageTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 12 },
   pageSubtitle: { fontSize: 10, color: 'rgba(255,255,255,0.6)', fontWeight: 'bold', letterSpacing: 1.2 },
   pageTitle: { fontSize: 24, fontWeight: '800', color: '#FFF', marginTop: 2 },
   countBadge: { backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   countBadgeText: { color: '#FFF', fontSize: 10, fontWeight: '600' },
   scrollView: { flex: 1 },
-  scrollContent: { padding: 16, paddingBottom: 48 },
+  scrollContent: { paddingBottom: 24 },
+  innerContent: { paddingHorizontal: 16, paddingTop: 16 },
   kpiRow: { flexDirection: 'row', gap: 10, marginBottom: 14 },
   kpiCardRed: { flex: 1, borderRadius: 20, padding: 14, borderWidth: 1, borderColor: '#FCA5A5' },
   kpiLabelRed: { fontSize: 8, color: '#DC2626', fontWeight: 'bold', letterSpacing: 0.8 },
@@ -1005,7 +1029,7 @@ const styles = StyleSheet.create({
   repaySubTitle: { fontSize: 8, fontWeight: 'bold', color: '#A0AEC0', letterSpacing: 0.5, marginBottom: 4 },
   repaySubItem: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 2 },
   repaySubText: { fontSize: 10, color: '#16A34A', fontWeight: '600' },
-  dialogBox: { width: '100%', maxWidth: 340, backgroundColor: '#FFF', borderRadius: 24, padding: 20, alignSelf: 'center', marginVertical: 'auto' },
+  dialogBox: { width: '100%', maxWidth: 340, maxHeight: '85%', backgroundColor: '#FFF', borderRadius: 24, padding: 20, alignSelf: 'center', marginVertical: 'auto' },
   dialogActions: { flexDirection: 'row', gap: 10, marginTop: 16 },
   dialogCancelBtn: { flex: 1, backgroundColor: '#F3F4F6', borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
   dialogCancelText: { color: '#6B7280', fontWeight: '600', fontSize: 12 },

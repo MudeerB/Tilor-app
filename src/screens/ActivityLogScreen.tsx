@@ -12,6 +12,7 @@ import {
   Platform,
   KeyboardAvoidingView,
   Keyboard,
+  StatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -226,16 +227,47 @@ export const ActivityLogScreen: React.FC<ActivityLogScreenProps> = ({ session, o
     );
   };
 
-  const renderHeader = () => {
-    const availableFilters: FilterType[] = [
-      'all',
-      'invoice',
-      'stock',
-      'product',
-      ...(session.role === 'owner' || session.role === 'admin' ? (['security'] as const) : []),
-    ];
+  const availableFilters: FilterType[] = useMemo(() => [
+    'all',
+    'invoice',
+    'stock',
+    'product',
+    ...(session.role === 'owner' || session.role === 'admin' ? (['security'] as const) : []),
+  ], [session.role]);
 
+  const renderFooter = () => {
+    if (activeItems.length === 0) return null;
     return (
+      <View style={styles.paginationContainer}>
+        <TouchableOpacity 
+          style={[styles.pageButton, currentPage === 1 && styles.pageButtonDisabled]}
+          onPress={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+          disabled={currentPage === 1}
+        >
+          <Feather name="chevron-left" size={20} color={currentPage === 1 ? '#D1D5DB' : '#7C3AED'} />
+        </TouchableOpacity>
+        <Text style={styles.pageText}>
+          Page {currentPage} of {totalPages}
+        </Text>
+        <TouchableOpacity 
+          style={[styles.pageButton, currentPage === totalPages && styles.pageButtonDisabled]}
+          onPress={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+          disabled={currentPage === totalPages}
+        >
+          <Feather name="chevron-right" size={20} color={currentPage === totalPages ? '#D1D5DB' : '#7C3AED'} />
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  return (
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <StatusBar barStyle="light-content" />
+
+      {/* Pinned Header Banner (Keeps TextInput mounted so typing never dismisses keyboard) */}
       <LinearGradient
         colors={['#5B21B6', '#6D28D9', '#7C3AED']}
         start={{ x: 0, y: 0 }}
@@ -311,39 +343,7 @@ export const ActivityLogScreen: React.FC<ActivityLogScreenProps> = ({ session, o
           </View>
         </SafeAreaView>
       </LinearGradient>
-    );
-  };
 
-  const renderFooter = () => {
-    if (activeItems.length === 0) return null;
-    return (
-      <View style={styles.paginationContainer}>
-        <TouchableOpacity 
-          style={[styles.pageButton, currentPage === 1 && styles.pageButtonDisabled]}
-          onPress={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-          disabled={currentPage === 1}
-        >
-          <Feather name="chevron-left" size={20} color={currentPage === 1 ? '#D1D5DB' : '#7C3AED'} />
-        </TouchableOpacity>
-        <Text style={styles.pageText}>
-          Page {currentPage} of {totalPages}
-        </Text>
-        <TouchableOpacity 
-          style={[styles.pageButton, currentPage === totalPages && styles.pageButtonDisabled]}
-          onPress={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-          disabled={currentPage === totalPages}
-        >
-          <Feather name="chevron-right" size={20} color={currentPage === totalPages ? '#D1D5DB' : '#7C3AED'} />
-        </TouchableOpacity>
-      </View>
-    );
-  };
-
-  return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
       {/* List */}
       <View style={styles.innerContent}>
         {loading ? (
@@ -353,7 +353,6 @@ export const ActivityLogScreen: React.FC<ActivityLogScreenProps> = ({ session, o
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
           >
-            {renderHeader()}
             <View style={{ paddingHorizontal: 16, paddingTop: 14 }}>
               <ActivityLogSkeleton />
             </View>
@@ -362,7 +361,6 @@ export const ActivityLogScreen: React.FC<ActivityLogScreenProps> = ({ session, o
           <FlatList
             data={currentLogs}
             keyExtractor={(item) => item.id}
-            ListHeaderComponent={renderHeader}
             ListFooterComponent={renderFooter}
             renderItem={renderLogItem}
             contentContainerStyle={styles.listContent}
@@ -535,6 +533,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   listContent: {
+    paddingTop: 14,
     paddingBottom: 48,
   },
   logCard: {

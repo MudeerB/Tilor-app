@@ -131,6 +131,9 @@ export interface CartItem {
   accent: string;
   boxes: number;
   roomName?: string | null;
+  sqft?: number;
+  tiles?: number;
+  tilesPerBox?: number;
 }
 
 export interface Customer {
@@ -199,6 +202,10 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
   const [lastInvoice, setLastInvoice] = useState<any>(null);
   const [isSharingPdf, setIsSharingPdf] = useState(false);
 
+  // View Details Modal State for Cart Item
+  const [detailModalItem, setDetailModalItem] = useState<{ item: CartItem; index: number } | null>(null);
+  const [customRoomText, setCustomRoomText] = useState('');
+
   const handleShareOrPrintInvoice = useCallback(async (inv: any) => {
     if (!inv) {
       Alert.alert('Invoice Missing', 'No invoice record available to share.');
@@ -256,22 +263,33 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
               const collection = loadedCatalog.find(t => t.id === r.selectedTile);
               if (!collection) return;
               const variant = collection.variants.find(v => v.type === r.variantType) || collection.variants[0];
+              const sqftPerBox = collection.sqftPerBox || r.sqftPerBox || 0;
+              const tilesPerBox = collection.tilesPerBox || r.tilesPerBox || 8;
+              const computedSqft = typeof r.sqft === 'number' && r.sqft > 0
+                ? r.sqft
+                : Math.round(r.boxes * sqftPerBox * 10) / 10;
+              const computedTiles = typeof r.tiles === 'number' && r.tiles > 0
+                ? r.tiles
+                : r.boxes * tilesPerBox;
 
               items.push({
-                id: `${collection.id}_${variant.type}_${r.id || r.name || 'room'}_${idx}_${Date.now()}`,
+                id: `${collection.id}_${variant.type}_${r.id || r.roomName || r.name || 'room'}_${idx}_${Date.now()}`,
                 tileId: collection.id,
                 variantId: variant.id,
                 variantType: variant.type,
-                variantLabel: collection.is12x18 ? variant.label : undefined,
+                variantLabel: collection.is12x18 ? variant.label : (r.variantLabel || undefined),
                 name: collection.name,
                 brand: collection.brand,
                 size: collection.size,
-                sqftPerBox: collection.sqftPerBox,
+                sqftPerBox,
+                tilesPerBox,
                 pricePerBox: r.pricePerBox || variant.pricePerBox,
                 color: variant.color,
                 accent: variant.accent,
                 boxes: r.boxes,
-                roomName: r.name,
+                roomName: r.roomName || r.name || 'Living Room',
+                sqft: computedSqft,
+                tiles: computedTiles,
               });
             });
             setCart(items);
@@ -329,8 +347,13 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
     if (existingIdx >= 0) {
       const updated = [...cart];
       updated[existingIdx].boxes += 1;
+      const item = updated[existingIdx];
+      item.sqft = Math.round(item.boxes * (item.sqftPerBox || 0) * 10) / 10;
+      item.tiles = item.boxes * (item.tilesPerBox || 8);
       updateCartState(updated);
     } else {
+      const tilesPerBox = col.tilesPerBox || 8;
+      const sqftPerBox = col.sqftPerBox || 0;
       const newItem: CartItem = {
         id: `${col.id}_${selectedVariant.type}_${Date.now()}_${Math.random()}`,
         tileId: col.id,
@@ -340,12 +363,15 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
         name: col.name,
         brand: col.brand,
         size: col.size,
-        sqftPerBox: col.sqftPerBox,
+        sqftPerBox,
+        tilesPerBox,
         pricePerBox: selectedVariant.pricePerBox,
         color: selectedVariant.color,
         accent: selectedVariant.accent,
         boxes: 1,
-        roomName: null,
+        roomName: 'Living Room',
+        sqft: Math.round(1 * sqftPerBox * 10) / 10,
+        tiles: 1 * tilesPerBox,
       };
       updateCartState([...cart, newItem]);
     }
@@ -365,6 +391,10 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
       updated.splice(index, 1);
     } else {
       updated[index].boxes = newQty;
+      const sqftPerBox = updated[index].sqftPerBox || 0;
+      const tilesPerBox = updated[index].tilesPerBox || 8;
+      updated[index].sqft = Math.round(newQty * sqftPerBox * 10) / 10;
+      updated[index].tiles = newQty * tilesPerBox;
     }
     updateCartState(updated);
   };
@@ -373,6 +403,8 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
     const updated = [...cart];
     if (text === '') {
       updated[index].boxes = 0;
+      updated[index].sqft = 0;
+      updated[index].tiles = 0;
       updateCartState(updated);
       return;
     }
@@ -391,7 +423,29 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
       } else {
         updated[index].boxes = parsed;
       }
+      const sqftPerBox = updated[index].sqftPerBox || 0;
+      const tilesPerBox = updated[index].tilesPerBox || 8;
+      updated[index].sqft = Math.round(updated[index].boxes * sqftPerBox * 10) / 10;
+      updated[index].tiles = updated[index].boxes * tilesPerBox;
       updateCartState(updated);
+    }
+  };
+
+  const handleUpdateItemRoom = (newRoom: string) => {
+    if (!detailModalItem) return;
+    const trimmed = newRoom.trim();
+    const updated = [...cart];
+    if (updated[detailModalItem.index]) {
+      updated[detailModalItem.index] = {
+        ...updated[detailModalItem.index],
+        roomName: trimmed || 'Living Room',
+      };
+      updateCartState(updated);
+      setDetailModalItem(prev => prev ? {
+        ...prev,
+        item: { ...prev.item, roomName: trimmed || 'Living Room' }
+      } : null);
+      hapticFeedback.selection();
     }
   };
 
@@ -808,6 +862,31 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
             <View style={styles.cartList}>
               {cart.map((item, idx) => (
                 <View key={item.id || idx} style={styles.cartItemCard}>
+                  {/* Top Room Banner Row */}
+                  <View style={styles.cartItemRoomRow}>
+                    <View style={styles.cartItemRoomPill}>
+                      <Feather name="home" size={11} color="#6D28D9" />
+                      <Text style={styles.cartItemRoomText}>
+                        {item.roomName || 'Living Room'}
+                      </Text>
+                    </View>
+
+                    {/* View Details Button */}
+                    <TouchableOpacity
+                      style={styles.viewDetailsBtn}
+                      onPress={() => {
+                        hapticFeedback.light();
+                        setCustomRoomText(item.roomName || 'Living Room');
+                        setDetailModalItem({ item, index: idx });
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Feather name="info" size={11} color="#7C3AED" />
+                      <Text style={styles.viewDetailsBtnText}>View Details</Text>
+                      <Feather name="chevron-right" size={12} color="#7C3AED" />
+                    </TouchableOpacity>
+                  </View>
+
                   <View style={styles.cartItemTop}>
                     <View style={[styles.cartItemSwatch, { backgroundColor: item.color }]} />
                     <View style={{ flex: 1 }}>
@@ -819,9 +898,8 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
                           </View>
                         )}
                       </View>
-                      <Text style={styles.cartItemBrand}>
-                        {item.brand} · {item.size}
-                        {item.roomName ? ` · ${item.roomName}` : ''}
+                      <Text style={styles.cartItemSpecs}>
+                        {item.size} · {(item.sqft || (item.boxes * item.sqftPerBox)).toFixed(1)} sq.ft · {item.tiles || (item.boxes * (item.tilesPerBox || 8))} tiles
                       </Text>
                       <Text style={styles.cartItemPrice}>₹{item.pricePerBox}/box</Text>
                     </View>
@@ -1348,6 +1426,190 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
         </View>
       </Modal>
 
+      {/* ── View Details Modal: Room & Tile Specifications ── */}
+      <Modal
+        visible={!!detailModalItem}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setDetailModalItem(null)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalBackdrop}
+        >
+          <View style={styles.specSheetContent}>
+            <View style={styles.sheetHandle} />
+
+            <View style={styles.specSheetHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.specSheetSubtitle}>TILE ALLOCATION &amp; SPECS</Text>
+                <Text style={styles.specSheetTitle}>{detailModalItem?.item.name}</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setDetailModalItem(null)}
+                style={styles.modalCloseCircle}
+              >
+                <Feather name="x" size={16} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              {/* Room Assignment Section */}
+              <View style={styles.specRoomCard}>
+                <View style={styles.specRoomCardHeader}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Feather name="home" size={14} color="#7C3AED" />
+                    <Text style={styles.specRoomCardLabel}>ASSIGNED ROOM</Text>
+                  </View>
+                  <Text style={styles.specRoomCurrentVal}>
+                    {detailModalItem?.item.roomName || 'Living Room'}
+                  </Text>
+                </View>
+
+                {/* Quick Room Preset Chips */}
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ gap: 6, paddingVertical: 6 }}
+                  keyboardShouldPersistTaps="handled"
+                >
+                  {[
+                    'Living Room',
+                    'Master Bedroom',
+                    'Bedroom 1',
+                    'Bedroom 2',
+                    'Kitchen',
+                    'Bathroom',
+                    'Dining Room',
+                    'Hall',
+                    'Balcony',
+                    'Pooja Room',
+                    'Exterior',
+                  ].map(preset => {
+                    const isSelected = (detailModalItem?.item.roomName || 'Living Room') === preset;
+                    return (
+                      <TouchableOpacity
+                        key={preset}
+                        style={[styles.roomPresetChip, isSelected && styles.roomPresetChipActive]}
+                        onPress={() => handleUpdateItemRoom(preset)}
+                      >
+                        <Text style={[styles.roomPresetChipText, isSelected && styles.roomPresetChipTextActive]}>
+                          {preset}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+
+                {/* Custom Room Name Input */}
+                <View style={styles.customRoomInputWrap}>
+                  <TextInput
+                    style={styles.customRoomTextInput}
+                    placeholder="Or type custom room name..."
+                    placeholderTextColor="#A0AEC0"
+                    value={customRoomText}
+                    onChangeText={setCustomRoomText}
+                    onSubmitEditing={() => handleUpdateItemRoom(customRoomText)}
+                    returnKeyType="done"
+                  />
+                  {customRoomText.trim().length > 0 && customRoomText !== detailModalItem?.item.roomName && (
+                    <TouchableOpacity
+                      style={styles.applyRoomBtn}
+                      onPress={() => handleUpdateItemRoom(customRoomText)}
+                    >
+                      <Text style={styles.applyRoomBtnText}>Set</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
+              {/* Comprehensive Breakdown Metrics Grid */}
+              <View style={styles.specMetricsGrid}>
+                <View style={styles.specMetricCard}>
+                  <View style={styles.specMetricIconBox}>
+                    <Feather name="maximize-2" size={14} color="#7C3AED" />
+                  </View>
+                  <Text style={styles.specMetricLabel}>TOTAL SQ FT</Text>
+                  <Text style={styles.specMetricValue}>
+                    {detailModalItem ? (detailModalItem.item.sqft || (detailModalItem.item.boxes * detailModalItem.item.sqftPerBox)).toFixed(1) : 0} sq.ft
+                  </Text>
+                  <Text style={styles.specMetricSub}>Coverage Area</Text>
+                </View>
+
+                <View style={styles.specMetricCard}>
+                  <View style={[styles.specMetricIconBox, { backgroundColor: '#EDE9FE' }]}>
+                    <Feather name="grid" size={14} color="#7C3AED" />
+                  </View>
+                  <Text style={styles.specMetricLabel}>TILES COUNT</Text>
+                  <Text style={styles.specMetricValue}>
+                    {detailModalItem ? (detailModalItem.item.tiles || (detailModalItem.item.boxes * (detailModalItem.item.tilesPerBox || 8))) : 0} pcs
+                  </Text>
+                  <Text style={styles.specMetricSub}>Individual Pieces</Text>
+                </View>
+
+                <View style={styles.specMetricCard}>
+                  <View style={[styles.specMetricIconBox, { backgroundColor: '#FEF3C7' }]}>
+                    <Feather name="tag" size={14} color="#D97706" />
+                  </View>
+                  <Text style={styles.specMetricLabel}>BRAND</Text>
+                  <Text style={styles.specMetricValue} numberOfLines={1}>
+                    {detailModalItem?.item.brand || 'Standard'}
+                  </Text>
+                  <Text style={styles.specMetricSub}>Manufacturer</Text>
+                </View>
+
+                <View style={styles.specMetricCard}>
+                  <View style={[styles.specMetricIconBox, { backgroundColor: '#DCFCE7' }]}>
+                    <Feather name="box" size={14} color="#16A34A" />
+                  </View>
+                  <Text style={styles.specMetricLabel}>BOXES ORDERED</Text>
+                  <Text style={styles.specMetricValue}>
+                    {detailModalItem?.item.boxes} boxes
+                  </Text>
+                  <Text style={styles.specMetricSub}>
+                    {detailModalItem?.item.sqftPerBox} sqft / box
+                  </Text>
+                </View>
+              </View>
+
+              {/* Price & Specs Table */}
+              <View style={styles.specDetailRowsCard}>
+                <View style={styles.specDetailRow}>
+                  <Text style={styles.specDetailRowLabel}>Tile Dimensions (Size):</Text>
+                  <Text style={styles.specDetailRowVal}>{detailModalItem?.item.size}</Text>
+                </View>
+                {detailModalItem?.item.variantLabel && (
+                  <View style={styles.specDetailRow}>
+                    <Text style={styles.specDetailRowLabel}>Tile Variant:</Text>
+                    <Text style={[styles.specDetailRowVal, { color: '#7C3AED', fontWeight: 'bold' }]}>
+                      {detailModalItem.item.variantLabel}
+                    </Text>
+                  </View>
+                )}
+                <View style={styles.specDetailRow}>
+                  <Text style={styles.specDetailRowLabel}>Price Rate per Box:</Text>
+                  <Text style={styles.specDetailRowVal}>₹{detailModalItem?.item.pricePerBox} / bx</Text>
+                </View>
+                <View style={[styles.specDetailRow, { borderBottomWidth: 0, paddingTop: 10, marginTop: 4, borderTopWidth: 1, borderTopColor: '#F1F5F9' }]}>
+                  <Text style={[styles.specDetailRowLabel, { fontSize: 13, fontWeight: '800', color: '#1E293B' }]}>Item Total Cost:</Text>
+                  <Text style={[styles.specDetailRowVal, { fontSize: 16, fontWeight: '800', color: '#7C3AED' }]}>
+                    ₹{detailModalItem ? (detailModalItem.item.boxes * detailModalItem.item.pricePerBox).toLocaleString('en-IN') : 0}
+                  </Text>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={styles.specDoneBtn}
+                onPress={() => setDetailModalItem(null)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.specDoneBtnText}>Done</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
       {/* ── Mobile-First Product Search Modal ── */}
       <Modal
         visible={searchModalVisible}
@@ -1722,4 +1984,43 @@ const styles = StyleSheet.create({
   qtyInputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2, minWidth: 64, justifyContent: 'center' },
   qtyInput: { fontSize: 13, fontWeight: '800', color: '#0F172A', textAlign: 'center', minWidth: 26, padding: 0 },
   qtyUnitLabel: { fontSize: 11, fontWeight: '600', color: '#64748B', marginLeft: 2 },
+
+  // Room Banner & View Details in Cart Card
+  cartItemRoomRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 },
+  cartItemRoomPill: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#F3E8FF', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#E9D5FF' },
+  cartItemRoomText: { fontSize: 10, fontWeight: '800', color: '#6D28D9', letterSpacing: 0.3 },
+  viewDetailsBtn: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#FAF5FF', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#DDD6FE' },
+  viewDetailsBtnText: { fontSize: 10, fontWeight: '700', color: '#7C3AED' },
+  cartItemSpecs: { fontSize: 10, color: '#64748B', marginTop: 1 },
+
+  // View Details Modal Styles
+  specSheetContent: { backgroundColor: '#FFF', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 32, maxHeight: '85%' },
+  specSheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 },
+  specSheetSubtitle: { fontSize: 10, color: '#6D28D9', fontWeight: '800', letterSpacing: 1 },
+  specSheetTitle: { fontSize: 18, fontWeight: '800', color: '#0F172A', marginTop: 2 },
+  modalCloseCircle: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center' },
+  specRoomCard: { backgroundColor: '#FAF5FF', borderWidth: 1, borderColor: '#E9D5FF', borderRadius: 16, padding: 12, marginBottom: 14 },
+  specRoomCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  specRoomCardLabel: { fontSize: 10, fontWeight: '800', color: '#6D28D9', letterSpacing: 0.5 },
+  specRoomCurrentVal: { fontSize: 12, fontWeight: '800', color: '#4C1D95' },
+  roomPresetChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, backgroundColor: '#FFF', borderWidth: 1, borderColor: '#DDD6FE' },
+  roomPresetChipActive: { backgroundColor: '#7C3AED', borderColor: '#7C3AED' },
+  roomPresetChipText: { fontSize: 10, fontWeight: '700', color: '#6B7280' },
+  roomPresetChipTextActive: { color: '#FFF' },
+  customRoomInputWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', borderRadius: 10, borderWidth: 1, borderColor: '#DDD6FE', paddingHorizontal: 10, height: 38, marginTop: 4 },
+  customRoomTextInput: { flex: 1, fontSize: 11, color: '#0F172A', padding: 0 },
+  applyRoomBtn: { backgroundColor: '#7C3AED', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
+  applyRoomBtnText: { fontSize: 10, fontWeight: '700', color: '#FFF' },
+  specMetricsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 14 },
+  specMetricCard: { width: '48%', backgroundColor: '#F8FAFC', borderRadius: 14, padding: 12, borderWidth: 1, borderColor: '#E2E8F0' },
+  specMetricIconBox: { width: 28, height: 28, borderRadius: 8, backgroundColor: '#EDE9FE', alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
+  specMetricLabel: { fontSize: 9, fontWeight: '800', color: '#64748B', letterSpacing: 0.5 },
+  specMetricValue: { fontSize: 14, fontWeight: '800', color: '#0F172A', marginTop: 2 },
+  specMetricSub: { fontSize: 9, color: '#94A3B8', marginTop: 1 },
+  specDetailRowsCard: { backgroundColor: '#F8FAFC', borderRadius: 14, padding: 12, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 16 },
+  specDetailRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 5 },
+  specDetailRowLabel: { fontSize: 11, color: '#64748B', fontWeight: '500' },
+  specDetailRowVal: { fontSize: 11, color: '#0F172A', fontWeight: '700' },
+  specDoneBtn: { backgroundColor: '#7C3AED', paddingVertical: 12, borderRadius: 14, alignItems: 'center' },
+  specDoneBtnText: { color: '#FFF', fontSize: 13, fontWeight: '800' },
 });

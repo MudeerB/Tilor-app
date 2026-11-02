@@ -726,18 +726,29 @@ export const EstimatorScreen: React.FC<EstimatorScreenProps> = ({
 
     validRooms.forEach(r => {
       const col = r.selectedCollection!;
+      const tilesPerBox = col.tilesPerBox || 8;
       if (col.is12x18 && r.variantAllocations) {
         r.variantAllocations.forEach(alloc => {
           if (alloc.boxes > 0) {
             const v = col.variants.find(item => item.type === alloc.variantType);
+            const totalTiles = alloc.calculatedTiles || (alloc.boxes * tilesPerBox);
+            const approxSqft = col.sqftPerBox ? Math.round(alloc.boxes * col.sqftPerBox * 10) / 10 : r.sqft;
             billingRooms.push({
               id: `${r.id}_${alloc.variantType}`,
-              name: `${r.name} (${alloc.label})`,
-              sqft: r.sqft,
+              roomName: r.name,
+              name: col.name,
+              tileName: col.name,
+              brand: col.brand,
+              size: col.size,
+              sqft: approxSqft,
+              tiles: totalTiles,
               boxes: alloc.boxes,
+              sqftPerBox: col.sqftPerBox,
+              tilesPerBox,
               selectedTile: col.id,
               variantId: v?.id || alloc.variantId,
               variantType: alloc.variantType,
+              variantLabel: alloc.label,
               pricePerBox: alloc.pricePerBox,
               totalAmount: alloc.totalAmount,
             });
@@ -746,11 +757,19 @@ export const EstimatorScreen: React.FC<EstimatorScreenProps> = ({
       } else {
         const defaultVar = col.variants[0];
         const effectivePrice = r.priceOverride ? parseFloat(r.priceOverride) || r.pricePerBox : r.pricePerBox;
+        const totalTiles = r.boxes * tilesPerBox;
         billingRooms.push({
           id: r.id,
-          name: r.name,
+          roomName: r.name,
+          name: col.name,
+          tileName: col.name,
+          brand: col.brand,
+          size: col.size,
           sqft: r.sqft,
+          tiles: totalTiles,
           boxes: r.boxes,
+          sqftPerBox: col.sqftPerBox,
+          tilesPerBox,
           selectedTile: col.id,
           variantId: defaultVar?.id,
           variantType: 'default',
@@ -840,17 +859,21 @@ export const EstimatorScreen: React.FC<EstimatorScreenProps> = ({
   const grandTotalBoxes  = rooms.reduce((sum, r) => sum + r.boxes, 0);
   const grandTotalAmount = rooms.reduce((sum, r) => sum + r.totalAmount, 0);
 
-  // Filter tiles for bottom sheet
-  const filteredTiles = catalog.filter(t => {
-    const matchesSearch =
-      !tileSearch ||
-      t.name.toLowerCase().includes(tileSearch.toLowerCase()) ||
-      t.brand.toLowerCase().includes(tileSearch.toLowerCase()) ||
-      t.size.toLowerCase().includes(tileSearch.toLowerCase());
-    const matchesSize =
-      sizeFilter === 'all' || t.size.replace('×', 'x') === sizeFilter;
-    return matchesSearch && matchesSize;
-  });
+  // Filter tiles for search modal
+  const filteredTiles = useMemo(() => {
+    const q = tileSearch.toLowerCase().trim();
+    return catalog.filter(t => {
+      const matchesSearch =
+        !q ||
+        t.name.toLowerCase().includes(q) ||
+        t.brand.toLowerCase().includes(q) ||
+        t.size.toLowerCase().includes(q);
+      const normalizedSize = t.size.replace('×', 'x').toLowerCase();
+      const matchesSize =
+        sizeFilter === 'all' || normalizedSize.includes(sizeFilter.toLowerCase());
+      return matchesSearch && matchesSize;
+    });
+  }, [catalog, tileSearch, sizeFilter]);
 
   return (
        <View style={styles.container}>
@@ -1507,48 +1530,75 @@ export const EstimatorScreen: React.FC<EstimatorScreenProps> = ({
       </Modal>
 
       {/* 3. Modal Sheet: Tile Picker */}
-      <Modal visible={tilePickerVisible} transparent animationType="slide" onRequestClose={() => setTilePickerVisible(false)}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.modalBackdrop}
-        >
-          <View style={styles.sheetContent}>
-            <View style={styles.sheetHandle} />
-            <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>Select Tile Product</Text>
-              <TouchableOpacity onPress={() => { Keyboard.dismiss(); setTilePickerVisible(false); }} style={styles.modalCloseBtn}>
-                <Feather name="x" size={18} color="#6B7280" />
+      <Modal
+        visible={tilePickerVisible}
+        animationType="slide"
+        onRequestClose={() => { Keyboard.dismiss(); setTilePickerVisible(false); }}
+      >
+        <SafeAreaView style={styles.tileSearchModalContainer} edges={['top', 'bottom']}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={{ flex: 1 }}
+          >
+            {/* Pinned Search Header (Fixed height 48px input) */}
+            <View style={styles.tileSearchHeader}>
+              <TouchableOpacity
+                onPress={() => { Keyboard.dismiss(); setTilePickerVisible(false); }}
+                style={styles.tileSearchBackBtn}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Feather name="arrow-left" size={20} color="#1E293B" />
               </TouchableOpacity>
+
+              <View style={styles.tileSearchInputWrap}>
+                <Feather name="search" size={16} color="#7C3AED" style={{ marginRight: 8 }} />
+                <TextInput
+                  style={styles.tileSearchInput}
+                  placeholder="Search tile name, brand, or size..."
+                  placeholderTextColor="#94A3B8"
+                  value={tileSearch}
+                  onChangeText={setTileSearch}
+                  autoFocus
+                  returnKeyType="search"
+                  onSubmitEditing={() => Keyboard.dismiss()}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                {tileSearch.length > 0 && (
+                  <TouchableOpacity onPress={() => setTileSearch('')} style={{ padding: 4 }}>
+                    <Feather name="x-circle" size={16} color="#94A3B8" />
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
 
-            <View style={styles.sheetSearchWrap}>
-              <Feather name="search" size={14} color="#A0AEC0" style={{ marginRight: 6 }} />
-              <TextInput
-                style={styles.sheetSearchInput}
-                placeholder="Search tile name, size, or brand..."
-                placeholderTextColor="#A0AEC0"
-                value={tileSearch}
-                onChangeText={setTileSearch}
-                returnKeyType="search"
-                onSubmitEditing={() => Keyboard.dismiss()}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              {tileSearch.length > 0 && (
-                <TouchableOpacity onPress={() => setTileSearch('')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                  <Feather name="x" size={14} color="#A0AEC0" />
-                </TouchableOpacity>
-              )}
+            {/* Size Filter Pills Bar */}
+            <View style={styles.tileSearchFilterBar}>
+              <Text style={styles.tileFilterBarLabel}>Filter by Size:</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.tileFilterChipsScroll}
+                keyboardShouldPersistTaps="handled"
+              >
+                {['all', '12x18', '2x2', '2x4'].map(sz => (
+                  <TouchableOpacity
+                    key={sz}
+                    style={[styles.sizeChip, sizeFilter === sz && styles.sizeChipActive]}
+                    onPress={() => {
+                      hapticFeedback.light();
+                      setSizeFilter(sz);
+                    }}
+                  >
+                    <Text style={[styles.sizeChipText, sizeFilter === sz && styles.sizeChipTextActive]}>
+                      {sz === 'all' ? 'All Sizes' : sz}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
             </View>
 
-            <View style={styles.filterChipsRow}>
-              {['all', '12x18', '2x2', '2x4'].map(sz => (
-                <TouchableOpacity key={sz} style={[styles.sizeChip, sizeFilter === sz && styles.sizeChipActive]} onPress={() => setSizeFilter(sz)}>
-                  <Text style={[styles.sizeChipText, sizeFilter === sz && styles.sizeChipTextActive]}>{sz === 'all' ? 'All Sizes' : sz}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
+            {/* Search Results FlatList (flex: 1 sibling) */}
             <FlatList
               data={filteredTiles}
               keyExtractor={item => item.id}
@@ -1556,6 +1606,14 @@ export const EstimatorScreen: React.FC<EstimatorScreenProps> = ({
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag"
               style={{ flex: 1 }}
+              contentContainerStyle={styles.tileSearchResultsContainer}
+              ListEmptyComponent={
+                <View style={styles.tileSearchEmptyContainer}>
+                  <Feather name="inbox" size={40} color="#CBD5E1" />
+                  <Text style={styles.tileSearchEmptyTitle}>No matching tiles found</Text>
+                  <Text style={styles.tileSearchEmptySub}>Try a different keyword or select "All Sizes"</Text>
+                </View>
+              }
               renderItem={({ item }) => {
                 const mainVariant = item.variants[0];
                 const totalStock = item.is12x18
@@ -1563,7 +1621,14 @@ export const EstimatorScreen: React.FC<EstimatorScreenProps> = ({
                   : mainVariant?.stock || 0;
 
                 return (
-                  <TouchableOpacity style={styles.tileListItem} onPress={() => handleSelectCollection(item)} activeOpacity={0.75}>
+                  <TouchableOpacity
+                    style={styles.tileListItem}
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      handleSelectCollection(item);
+                    }}
+                    activeOpacity={0.75}
+                  >
                     <View style={[styles.tileListSwatch, { backgroundColor: mainVariant?.color || '#7C3AED' }]} />
                     <View style={{ flex: 1 }}>
                       <Text style={styles.tileListName}>{item.name}</Text>
@@ -1574,14 +1639,14 @@ export const EstimatorScreen: React.FC<EstimatorScreenProps> = ({
                     </View>
                     <View style={{ alignItems: 'flex-end' }}>
                       <Text style={styles.tileListPrice}>₹{mainVariant?.pricePerBox}/bx</Text>
-                      {item.is12x18 && <Text style={{ fontSize: 8, fontWeight: 'bold', color: '#7C3AED' }}>12×18 Variants</Text>}
+                      {item.is12x18 && <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#7C3AED', marginTop: 2 }}>12×18 Variants</Text>}
                     </View>
                   </TouchableOpacity>
                 );
               }}
             />
-          </View>
-        </KeyboardAvoidingView>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
       </Modal>
 
       {/* 4. Confirm Clear Modal */}
@@ -1956,4 +2021,50 @@ const styles = StyleSheet.create({
   confirmCancelText: { fontSize: 12, fontWeight: '700', color: '#64748B' },
   confirmDeleteBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, backgroundColor: '#EF4444', alignItems: 'center' },
   confirmDeleteText: { fontSize: 12, fontWeight: '700', color: '#FFF' },
+
+  // Full-Screen Tile Search Modal
+  tileSearchModalContainer: { flex: 1, backgroundColor: '#F8FAFC' },
+  tileSearchHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    gap: 10,
+  },
+  tileSearchBackBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tileSearchInputWrap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#DDD6FE',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 48,
+  },
+  tileSearchInput: { flex: 1, fontSize: 13, color: '#0F172A', fontWeight: '500', padding: 0 },
+  tileSearchFilterBar: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: '#FFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  tileFilterBarLabel: { fontSize: 10, fontWeight: '700', color: '#64748B', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
+  tileFilterChipsScroll: { gap: 8 },
+  tileSearchResultsContainer: { paddingHorizontal: 16, paddingVertical: 12 },
+  tileSearchEmptyContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: 64, gap: 8 },
+  tileSearchEmptyTitle: { fontSize: 14, fontWeight: '700', color: '#64748B' },
+  tileSearchEmptySub: { fontSize: 12, color: '#94A3B8', textAlign: 'center' },
 });

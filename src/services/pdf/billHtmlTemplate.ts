@@ -21,6 +21,9 @@ export interface InvoicePrintItem {
   total: number;
   sqftPerBox?: number;
   roomName?: string | null;
+  sqft?: number;
+  tiles?: number;
+  tilesPerBox?: number;
 }
 
 export interface CreditPrintDetail {
@@ -197,17 +200,27 @@ export function generateBillHtml(inv: InvoicePrintData): string {
     const pricePerBox = Number(item.pricePerBox) || 0;
     const rowTotal = Number(item.total) || (boxes * pricePerBox);
 
+    // Compute sqft & tiles with reliable fallbacks
+    const itemSqft = item.sqft !== undefined
+      ? item.sqft
+      : (item.sqftPerBox ? Math.round(boxes * item.sqftPerBox * 10) / 10 : (item.size?.includes('12') ? boxes * 9 : boxes * 16));
+    const itemTiles = item.tiles !== undefined
+      ? item.tiles
+      : (item.tilesPerBox ? boxes * item.tilesPerBox : (item.size?.includes('12') ? boxes * 6 : boxes * 4));
+
     // Build specification pills
     const pills: string[] = [];
-    if (safeVariant) pills.push(`<span class="item-tag">${safeVariant}</span>`);
+    if (safeVariant) pills.push(`<span class="item-tag item-tag-variant">${safeVariant}</span>`);
     if (safeSize) pills.push(`<span class="item-tag">${safeSize}</span>`);
-    if (safeBrand) pills.push(`<span class="item-tag">${safeBrand}</span>`);
-    if (safeRoom) pills.push(`<span class="item-tag item-tag-room">📍 ${safeRoom}</span>`);
+    if (itemSqft) pills.push(`<span class="item-tag item-tag-metric">📐 ${itemSqft} sq.ft</span>`);
+    if (itemTiles) pills.push(`<span class="item-tag item-tag-metric">🧱 ${itemTiles} tiles</span>`);
+    if (safeBrand) pills.push(`<span class="item-tag item-tag-brand">Brand: ${safeBrand}</span>`);
 
     return `
       <tr>
         <td class="col-num">${index + 1}</td>
         <td class="col-desc">
+          <div class="item-room-badge"><span class="room-pin">🏠</span> <span class="room-text">${(safeRoom || 'GENERAL ROOM').toUpperCase()}</span></div>
           <div class="item-title">${safeName}</div>
           ${pills.length > 0 ? `<div class="item-tags">${pills.join(' ')}</div>` : ''}
         </td>
@@ -561,6 +574,25 @@ export function generateBillHtml(inv: InvoicePrintData): string {
       color: var(--text-main);
     }
 
+    .item-room-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: #F3E8FF;
+      border: 1px solid #DDD6FE;
+      color: #6D28D9;
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      padding: 2px 7px;
+      border-radius: 4px;
+      margin-bottom: 3px;
+    }
+
+    .item-room-badge .room-pin {
+      font-size: 9.5px;
+    }
+
     .item-title {
       font-size: 12px;
       font-weight: 700;
@@ -589,6 +621,29 @@ export function generateBillHtml(inv: InvoicePrintData): string {
       background: #F3E8FF;
       color: #6D28D9;
       border: 1px solid #E9D5FF;
+    }
+
+    .item-tag-variant {
+      background: #FEF3C7;
+      color: #92400E;
+      border: 1px solid #FDE68A;
+      font-weight: 700;
+    }
+
+    .item-tag-metric {
+      background: #EDE9FE;
+      color: #5B21B6;
+      border: 1px solid #DDD6FE;
+      font-weight: 700;
+      text-transform: none;
+    }
+
+    .item-tag-brand {
+      background: #F8FAFC;
+      color: #64748B;
+      border: 1px solid #E2E8F0;
+      font-weight: 500;
+      text-transform: none;
     }
 
     /* ─── Financial Breakdown & Summary ───────────────────────────────── */

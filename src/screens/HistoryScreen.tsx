@@ -53,6 +53,11 @@ interface InvoiceItem {
   boxes: number;
   pricePerBox: number;
   total: number;
+  roomName?: string | null;
+  sqft?: number;
+  tiles?: number;
+  sqftPerBox?: number;
+  tilesPerBox?: number;
 }
 
 interface Repayment {
@@ -124,8 +129,10 @@ const generateReceiptText = (inv: InvoiceRecord): string => {
   const itemLines = inv.items
     ? inv.items
         .map(
-          (item: InvoiceItem, i: number) =>
-            `${i + 1}. ${item.name} (${item.brand || 'Tile'})\n   ${item.boxes} bx × ₹${item.pricePerBox} = ₹${item.total}`
+          (item: InvoiceItem, i: number) => {
+            const roomTag = item.roomName ? ` [🏠 ${item.roomName}]` : '';
+            return `${i + 1}. ${item.name}${roomTag}\n   ${item.boxes} bx × ₹${item.pricePerBox} = ₹${item.total}`;
+          }
         )
         .join('\n')
     : '';
@@ -407,6 +414,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
 
   // Detailed Invoice View Modal state
   const [selectedInvoice, setSelectedInvoice]     = useState<InvoiceRecord | null>(null);
+  const [selectedItemForDetails, setSelectedItemForDetails] = useState<InvoiceItem | null>(null);
   const [isSharingPdf, setIsSharingPdf]           = useState(false);
 
   const handleShareOrPrintInvoice = useCallback(async (inv: InvoiceRecord | null) => {
@@ -1218,20 +1226,44 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
               <Text style={styles.modalSubHeader}>Items Purchased</Text>
               <View style={styles.infoSummaryCard}>
                 {selectedInvoice?.items.map((item, idx) => (
-                  <View key={idx} style={styles.itemRow}>
-                    <View style={{ flex: 1 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                        <Text style={styles.itemName}>{item.name}</Text>
-                        {Boolean(item.variantLabel) && (
-                          <View style={{ backgroundColor: '#EDE9FE', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 }}>
-                            <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#6D28D9' }}>{item.variantLabel}</Text>
-                          </View>
-                        )}
+                  <View key={idx} style={styles.itemRowContainer}>
+                    <View style={styles.itemRow}>
+                      <View style={{ flex: 1 }}>
+                        <View style={styles.historyRoomBadge}>
+                          <Text style={styles.historyRoomBadgeText}>
+                            🏠 {item.roomName || 'General / Store'}
+                          </Text>
+                        </View>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                          <Text style={styles.itemName}>{item.name}</Text>
+                          {Boolean(item.variantLabel) && (
+                            <View style={{ backgroundColor: '#EDE9FE', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 }}>
+                              <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#6D28D9' }}>{item.variantLabel}</Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text style={styles.itemBrandSpec}>
+                          {[item.size, `${item.boxes} bx`].filter(Boolean).join(' · ')}
+                        </Text>
                       </View>
-                      <Text style={styles.itemBrandSpec}>{[item.brand, item.size].filter(Boolean).join(' · ')}</Text>
+                      <View style={{ alignItems: 'flex-end', justifyContent: 'center' }}>
+                        <Text style={styles.itemTotalVal}>₹{(item.total || 0).toLocaleString('en-IN')}</Text>
+                        <Text style={styles.itemQtyPrice}>{item.boxes} bx × ₹{item.pricePerBox}</Text>
+                      </View>
                     </View>
-                    <Text style={styles.itemQtyPrice}>{item.boxes} boxes × ₹{item.pricePerBox}</Text>
-                    <Text style={styles.itemTotalVal}>₹{(item.total || 0).toLocaleString('en-IN')}</Text>
+                    <View style={styles.itemRowActions}>
+                      <TouchableOpacity
+                        style={styles.viewDetailsBtn}
+                        onPress={() => {
+                          hapticFeedback.light();
+                          setSelectedItemForDetails(item);
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Feather name="info" size={11} color="#6D28D9" />
+                        <Text style={styles.viewDetailsBtnText}>View Details</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 ))}
               </View>
@@ -1331,6 +1363,159 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
               </TouchableOpacity>
             </View>
           </View>
+        </View>
+      </Modal>
+
+      {/* ── Item Specification Details Modal ── */}
+      <Modal
+        visible={!!selectedItemForDetails}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSelectedItemForDetails(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={{ width: '100%', alignItems: 'center' }}
+          >
+            <View style={styles.detailsSheet}>
+              <View style={styles.sheetHandle} />
+
+              <View style={styles.sheetHeader}>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={styles.detailsTitle} numberOfLines={1}>
+                    {selectedItemForDetails?.name}
+                  </Text>
+                  <Text style={styles.detailsSub}>
+                    {selectedItemForDetails?.variantLabel
+                      ? `${selectedItemForDetails.variantLabel} Variant`
+                      : 'Tile Line Item Specifications'}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setSelectedItemForDetails(null)}
+                  style={styles.modalCloseCircle}
+                >
+                  <Feather name="x" size={16} color="#6B7280" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Room Badge Banner */}
+              <View style={styles.detailsRoomBanner}>
+                <View style={styles.detailsRoomIconWrap}>
+                  <Text style={{ fontSize: 16 }}>🏠</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.detailsRoomSub}>DESIGNATED ROOM / AREA</Text>
+                  <Text style={styles.detailsRoomName}>
+                    {selectedItemForDetails?.roomName || 'General / Store'}
+                  </Text>
+                </View>
+              </View>
+
+              {/* 2x2 Key Metric Cards */}
+              <View style={styles.detailsGrid}>
+                <View style={styles.detailCard}>
+                  <Text style={styles.detailCardLabel}>TOTAL AREA</Text>
+                  <Text style={styles.detailCardVal}>
+                    {selectedItemForDetails ? (
+                      selectedItemForDetails.sqft !== undefined
+                        ? selectedItemForDetails.sqft.toFixed(1)
+                        : (selectedItemForDetails.sqftPerBox
+                            ? (selectedItemForDetails.boxes * selectedItemForDetails.sqftPerBox).toFixed(1)
+                            : (selectedItemForDetails.size?.includes('12')
+                                ? (selectedItemForDetails.boxes * 9).toFixed(1)
+                                : (selectedItemForDetails.boxes * 16).toFixed(1)))
+                    ) : 0}{' '}
+                    <Text style={{ fontSize: 11, fontWeight: 'normal', color: '#6B7280' }}>sq.ft</Text>
+                  </Text>
+                  <Text style={styles.detailCardSub}>Coverage area</Text>
+                </View>
+
+                <View style={styles.detailCard}>
+                  <Text style={styles.detailCardLabel}>TILES COUNT</Text>
+                  <Text style={styles.detailCardVal}>
+                    {selectedItemForDetails ? (
+                      selectedItemForDetails.tiles !== undefined
+                        ? selectedItemForDetails.tiles
+                        : (selectedItemForDetails.tilesPerBox
+                            ? selectedItemForDetails.boxes * selectedItemForDetails.tilesPerBox
+                            : (selectedItemForDetails.size?.includes('12')
+                                ? selectedItemForDetails.boxes * 6
+                                : selectedItemForDetails.boxes * 4))
+                    ) : 0}{' '}
+                    <Text style={{ fontSize: 11, fontWeight: 'normal', color: '#6B7280' }}>pcs</Text>
+                  </Text>
+                  <Text style={styles.detailCardSub}>Individual tiles</Text>
+                </View>
+
+                <View style={styles.detailCard}>
+                  <Text style={styles.detailCardLabel}>BOXES ORDERED</Text>
+                  <Text style={styles.detailCardVal}>
+                    {selectedItemForDetails?.boxes || 0}{' '}
+                    <Text style={{ fontSize: 11, fontWeight: 'normal', color: '#6B7280' }}>boxes</Text>
+                  </Text>
+                  <Text style={styles.detailCardSub}>Standard packaging</Text>
+                </View>
+
+                <View style={styles.detailCard}>
+                  <Text style={styles.detailCardLabel}>TOTAL PRICE</Text>
+                  <Text style={[styles.detailCardVal, { color: '#7C3AED' }]}>
+                    ₹{(selectedItemForDetails?.total || 0).toLocaleString('en-IN')}
+                  </Text>
+                  <Text style={styles.detailCardSub}>
+                    ₹{selectedItemForDetails?.pricePerBox}/box
+                  </Text>
+                </View>
+              </View>
+
+              {/* Specification Breakdown List */}
+              <View style={styles.detailsSpecsList}>
+                <View style={styles.detailsSpecRow}>
+                  <Text style={styles.detailsSpecLabel}>Tile Brand:</Text>
+                  <Text style={styles.detailsSpecVal}>
+                    {selectedItemForDetails?.brand || 'Standard'}
+                  </Text>
+                </View>
+                <View style={styles.detailsSpecRow}>
+                  <Text style={styles.detailsSpecLabel}>Tile Dimensions / Size:</Text>
+                  <Text style={styles.detailsSpecVal}>
+                    {selectedItemForDetails?.size || 'N/A'}
+                  </Text>
+                </View>
+                <View style={styles.detailsSpecRow}>
+                  <Text style={styles.detailsSpecLabel}>Coverage / Box:</Text>
+                  <Text style={styles.detailsSpecVal}>
+                    {selectedItemForDetails?.sqftPerBox
+                      ? `${selectedItemForDetails.sqftPerBox} sqft / box`
+                      : (selectedItemForDetails?.size?.includes('12') ? '9 sqft / box' : '16 sqft / box')}
+                  </Text>
+                </View>
+                <View style={[styles.detailsSpecRow, { borderBottomWidth: 0 }]}>
+                  <Text style={styles.detailsSpecLabel}>Rate per Box:</Text>
+                  <Text style={[styles.detailsSpecVal, { color: '#059669', fontWeight: '800' }]}>
+                    ₹{selectedItemForDetails?.pricePerBox || 0}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Close Button */}
+              <TouchableOpacity
+                style={styles.detailsCloseBtn}
+                onPress={() => setSelectedItemForDetails(null)}
+                activeOpacity={0.8}
+              >
+                <LinearGradient
+                  colors={['#6D28D9', '#7C3AED']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.detailsCloseGrad}
+                >
+                  <Text style={styles.detailsCloseText}>Close Specifications</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
 
@@ -1694,4 +1879,172 @@ const styles = StyleSheet.create({
   sheetSubmitBtn: { flex: 1, borderRadius: 14, overflow: 'hidden' },
   sheetSubmitGrad: { paddingVertical: 12, alignItems: 'center' },
   sheetSubmitText: { fontSize: 12, fontWeight: 'bold', color: '#FFF' },
+  historyRoomBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#EDE9FE',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginBottom: 2,
+  },
+  historyRoomBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#6D28D9',
+    letterSpacing: 0.3,
+  },
+  itemRowContainer: {
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3E8FF',
+  },
+  itemRowActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    marginTop: 4,
+  },
+  viewDetailsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EDE9FE',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+  },
+  viewDetailsBtnText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#6D28D9',
+  },
+  detailsSheet: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: '#FFF',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 20,
+    maxHeight: '90%',
+  },
+  detailsTitle: {
+    fontSize: 17,
+    fontWeight: 'bold',
+    color: '#1A1A2E',
+  },
+  detailsSub: {
+    fontSize: 11,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  detailsRoomBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F5F3FF',
+    borderWidth: 1.5,
+    borderColor: '#DDD6FE',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 14,
+    gap: 10,
+  },
+  detailsRoomIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#EDE9FE',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  detailsRoomSub: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#7C3AED',
+    letterSpacing: 0.6,
+  },
+  detailsRoomName: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#1A1A2E',
+    marginTop: 1,
+  },
+  detailsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 16,
+  },
+  detailCard: {
+    width: '48%',
+    backgroundColor: '#F8F6FF',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#EDE9FE',
+  },
+  detailCardLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#6B7280',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  detailCardVal: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1A1A2E',
+  },
+  detailCardSub: {
+    fontSize: 9.5,
+    color: '#9CA3AF',
+    marginTop: 2,
+  },
+  detailsSpecsList: {
+    backgroundColor: '#F8F6FF',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 4,
+    marginBottom: 18,
+    borderWidth: 1,
+    borderColor: '#EDE9FE',
+  },
+  detailsSpecRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 9,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EDE9FE',
+  },
+  detailsSpecLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  detailsSpecVal: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1A1A2E',
+  },
+  detailsCloseBtn: {
+    borderRadius: 14,
+    overflow: 'hidden',
+    shadowColor: '#6D28D9',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  detailsCloseGrad: {
+    paddingVertical: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  detailsCloseText: {
+    color: '#FFF',
+    fontSize: 13,
+    fontWeight: 'bold',
+    letterSpacing: 0.3,
+  },
 });

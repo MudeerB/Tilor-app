@@ -921,292 +921,299 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   </TouchableOpacity>
                 </View>
 
-                {/* 12×18 Variant Selector Tabs */}
-                {selectedTile.is12x18 && (
-                  <View style={styles.variantSelectTabRow}>
-                    {selectedTile.variants.map(v => (
+                <ScrollView
+                  showsVerticalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
+                  contentContainerStyle={{ paddingBottom: 24 }}
+                  style={{ flexShrink: 1 }}
+                >
+                  {/* 12×18 Variant Selector Tabs */}
+                  {selectedTile.is12x18 && (
+                    <View style={styles.variantSelectTabRow}>
+                      {selectedTile.variants.map(v => (
+                        <TouchableOpacity
+                          key={v.type}
+                          style={[
+                            styles.variantSelectTab,
+                            selectedVariantType === v.type && styles.variantSelectTabActive,
+                          ]}
+                          onPress={() => {
+                            setInwardError(null);
+                            setOutwardError(null);
+                            setSelectedVariantType(v.type);
+                          }}
+                          activeOpacity={0.7}
+                        >
+                          <Text
+                            style={[
+                              styles.variantSelectTabText,
+                              selectedVariantType === v.type && styles.variantSelectTabTextActive,
+                            ]}
+                          >
+                            {v.label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+
+                  {/* Tile Variant Summary Card */}
+                  <View style={styles.detailSummaryCard}>
+                    <View style={[styles.detailSwatch, { backgroundColor: activeVariant.color }]} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.detailName}>
+                        {selectedTile.name} {selectedTile.is12x18 ? `(${activeVariant.label})` : ''}
+                      </Text>
+                      <Text style={styles.detailSpecs}>{selectedTile.size} · {selectedTile.sqftPerBox} sqft/box</Text>
+                      <Text style={styles.detailPrice}>₹{activeVariant.pricePerBox.toLocaleString('en-IN')}/box</Text>
+                    </View>
+                    <View>
+                      <Text style={styles.stockCountLarge}>{activeVariant.stock}</Text>
+                      <Text style={styles.stockCountUnit}>boxes</Text>
+                    </View>
+                  </View>
+
+                  {/* Inward/Outward/History Tabs */}
+                  <View style={styles.adjustTabRow}>
+                    {(['inward', 'outward', 'history'] as AdjustTab[]).map(tab => (
                       <TouchableOpacity
-                        key={v.type}
-                        style={[
-                          styles.variantSelectTab,
-                          selectedVariantType === v.type && styles.variantSelectTabActive,
-                        ]}
+                        key={tab}
+                        style={[styles.adjustTab, adjustTab === tab && styles.adjustTabActive]}
                         onPress={() => {
                           setInwardError(null);
                           setOutwardError(null);
-                          setSelectedVariantType(v.type);
+                          setAdjustTab(tab);
                         }}
                         activeOpacity={0.7}
                       >
-                        <Text
-                          style={[
-                            styles.variantSelectTabText,
-                            selectedVariantType === v.type && styles.variantSelectTabTextActive,
-                          ]}
-                        >
-                          {v.label}
+                        <Feather
+                          name={tab === 'inward' ? 'arrow-down-circle' : tab === 'outward' ? 'arrow-up-circle' : 'clock'}
+                          size={12}
+                          color={adjustTab === tab ? '#7C3AED' : '#A0AEC0'}
+                        />
+                        <Text style={[styles.adjustTabText, adjustTab === tab && styles.adjustTabTextActive]}>
+                          {tab === 'inward' ? 'Inward' : tab === 'outward' ? 'Outward' : 'History'}
                         </Text>
                       </TouchableOpacity>
                     ))}
                   </View>
-                )}
 
-                {/* Tile Variant Summary Card */}
-                <View style={styles.detailSummaryCard}>
-                  <View style={[styles.detailSwatch, { backgroundColor: activeVariant.color }]} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.detailName}>
-                      {selectedTile.name} {selectedTile.is12x18 ? `(${activeVariant.label})` : ''}
-                    </Text>
-                    <Text style={styles.detailSpecs}>{selectedTile.size} · {selectedTile.sqftPerBox} sqft/box</Text>
-                    <Text style={styles.detailPrice}>₹{activeVariant.pricePerBox.toLocaleString('en-IN')}/box</Text>
-                  </View>
-                  <View>
-                    <Text style={styles.stockCountLarge}>{activeVariant.stock}</Text>
-                    <Text style={styles.stockCountUnit}>boxes</Text>
-                  </View>
-                </View>
+                  {/* Inward Panel */}
+                  {adjustTab === 'inward' && (
+                    <View style={styles.panelContent}>
+                      <Text style={styles.fieldLabel}>INWARD QUANTITY (BOXES)</Text>
 
-                {/* Inward/Outward/History Tabs */}
-                <View style={styles.adjustTabRow}>
-                  {(['inward', 'outward', 'history'] as AdjustTab[]).map(tab => (
-                    <TouchableOpacity
-                      key={tab}
-                      style={[styles.adjustTab, adjustTab === tab && styles.adjustTabActive]}
-                      onPress={() => {
-                        setInwardError(null);
-                        setOutwardError(null);
-                        setAdjustTab(tab);
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <Feather
-                        name={tab === 'inward' ? 'arrow-down-circle' : tab === 'outward' ? 'arrow-up-circle' : 'clock'}
-                        size={12}
-                        color={adjustTab === tab ? '#7C3AED' : '#A0AEC0'}
-                      />
-                      <Text style={[styles.adjustTabText, adjustTab === tab && styles.adjustTabTextActive]}>
-                        {tab === 'inward' ? 'Inward' : tab === 'outward' ? 'Outward' : 'History'}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
+                      {/* Feature #11: Quantity Stepper */}
+                      <View style={styles.stepperRow}>
+                        <TouchableOpacity
+                          style={styles.stepperBtn}
+                          onPress={() => {
+                            const current = parseInt(inwardQty) || 1;
+                            setInwardQty(Math.max(1, current - 1).toString());
+                          }}
+                        >
+                          <Feather name="minus" size={16} color="#7C3AED" />
+                        </TouchableOpacity>
 
-                {/* Inward Panel */}
-                {adjustTab === 'inward' && (
-                  <View style={styles.panelContent}>
-                    <Text style={styles.fieldLabel}>INWARD QUANTITY (BOXES)</Text>
+                        <TextInput
+                          style={[styles.fieldInput, { flex: 1, textAlign: 'center', fontWeight: 'bold' }]}
+                          keyboardType="numeric"
+                          autoFocus
+                          value={inwardQty}
+                          onChangeText={(text) => {
+                            setInwardQty(text);
+                            if (inwardError) setInwardError(null);
+                          }}
+                        />
 
-                    {/* Feature #11: Quantity Stepper */}
-                    <View style={styles.stepperRow}>
-                      <TouchableOpacity
-                        style={styles.stepperBtn}
-                        onPress={() => {
-                          const current = parseInt(inwardQty) || 1;
-                          setInwardQty(Math.max(1, current - 1).toString());
-                        }}
-                      >
-                        <Feather name="minus" size={16} color="#7C3AED" />
-                      </TouchableOpacity>
-
-                      <TextInput
-                        style={[styles.fieldInput, { flex: 1, textAlign: 'center', fontWeight: 'bold' }]}
-                        keyboardType="numeric"
-                        autoFocus
-                        value={inwardQty}
-                        onChangeText={(text) => {
-                          setInwardQty(text);
-                          if (inwardError) setInwardError(null);
-                        }}
-                      />
-
-                      <TouchableOpacity
-                        style={styles.stepperBtn}
-                        onPress={() => {
-                          const current = parseInt(inwardQty) || 0;
-                          setInwardQty((current + 1).toString());
-                        }}
-                      >
-                        <Feather name="plus" size={16} color="#7C3AED" />
-                      </TouchableOpacity>
-                    </View>
-
-                    {/* Feature #10: Inline Validation Error */}
-                    {inwardError && (
-                      <View style={styles.inlineErrorBox}>
-                        <Feather name="alert-circle" size={12} color="#EF4444" />
-                        <Text style={styles.inlineErrorText}>{inwardError}</Text>
+                        <TouchableOpacity
+                          style={styles.stepperBtn}
+                          onPress={() => {
+                            const current = parseInt(inwardQty) || 0;
+                            setInwardQty((current + 1).toString());
+                          }}
+                        >
+                          <Feather name="plus" size={16} color="#7C3AED" />
+                        </TouchableOpacity>
                       </View>
-                    )}
 
-                    <Text style={styles.fieldLabel}>SUPPLIER NOTE / REFERENCE</Text>
-                    <TextInput
-                      style={styles.fieldInput}
-                      placeholder="e.g. Factory shipment batch #9"
-                      placeholderTextColor="#A0AEC0"
-                      value={inwardNote}
-                      onChangeText={setInwardNote}
-                    />
-
-                    <TouchableOpacity
-                      style={styles.actionBtnGreen}
-                      onPress={handleInward}
-                      activeOpacity={0.8}
-                      disabled={adjustLoading}
-                    >
-                      {adjustLoading ? (
-                        <ActivityIndicator size="small" color="#FFF" />
-                      ) : (
-                        <>
-                          <Feather name="arrow-down-circle" size={14} color="#FFF" />
-                          <Text style={styles.actionBtnText}>Add to {activeVariant.label} Stock</Text>
-                        </>
+                      {/* Feature #10: Inline Validation Error */}
+                      {inwardError && (
+                        <View style={styles.inlineErrorBox}>
+                          <Feather name="alert-circle" size={12} color="#EF4444" />
+                          <Text style={styles.inlineErrorText}>{inwardError}</Text>
+                        </View>
                       )}
-                    </TouchableOpacity>
-                  </View>
-                )}
 
-                {/* Outward Panel */}
-                {adjustTab === 'outward' && (
-                  <View style={styles.panelContent}>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Text style={styles.fieldLabel}>OUTWARD QUANTITY (BOXES)</Text>
-                      {/* Feature #11: MAX Button */}
-                      <TouchableOpacity
-                        style={styles.maxBtn}
-                        onPress={() => {
-                          setOutwardQty(activeVariant.stock.toString());
-                          if (outwardError) setOutwardError(null);
-                        }}
-                      >
-                        <Text style={styles.maxBtnText}>MAX ({activeVariant.stock})</Text>
-                      </TouchableOpacity>
-                    </View>
-
-                    {/* Feature #11: Quantity Stepper */}
-                    <View style={styles.stepperRow}>
-                      <TouchableOpacity
-                        style={styles.stepperBtn}
-                        onPress={() => {
-                          const current = parseInt(outwardQty) || 1;
-                          setOutwardQty(Math.max(1, current - 1).toString());
-                        }}
-                      >
-                        <Feather name="minus" size={16} color="#EF4444" />
-                      </TouchableOpacity>
-
+                      <Text style={styles.fieldLabel}>SUPPLIER NOTE / REFERENCE</Text>
                       <TextInput
-                        style={[styles.fieldInput, { flex: 1, textAlign: 'center', fontWeight: 'bold' }]}
-                        keyboardType="numeric"
-                        autoFocus
-                        value={outwardQty}
-                        onChangeText={(text) => {
-                          setOutwardQty(text);
-                          if (outwardError) setOutwardError(null);
-                        }}
+                        style={styles.fieldInput}
+                        placeholder="e.g. Factory shipment batch #9"
+                        placeholderTextColor="#A0AEC0"
+                        value={inwardNote}
+                        onChangeText={setInwardNote}
                       />
 
                       <TouchableOpacity
-                        style={styles.stepperBtn}
-                        onPress={() => {
-                          const current = parseInt(outwardQty) || 0;
-                          setOutwardQty(Math.min(activeVariant.stock, current + 1).toString());
-                        }}
+                        style={styles.actionBtnGreen}
+                        onPress={handleInward}
+                        activeOpacity={0.8}
+                        disabled={adjustLoading}
                       >
-                        <Feather name="plus" size={16} color="#EF4444" />
-                      </TouchableOpacity>
-                    </View>
-
-                    {/* Feature #10: Inline Validation Error */}
-                    {outwardError && (
-                      <View style={styles.inlineErrorBox}>
-                        <Feather name="alert-circle" size={12} color="#EF4444" />
-                        <Text style={styles.inlineErrorText}>{outwardError}</Text>
-                      </View>
-                    )}
-
-                    <Text style={styles.fieldLabel}>REASON / REFERENCE</Text>
-                    <TextInput
-                      style={styles.fieldInput}
-                      placeholder="e.g. Bill #TX-1042, Damaged in transit, Transfer"
-                      placeholderTextColor="#A0AEC0"
-                      value={outwardNote}
-                      onChangeText={setOutwardNote}
-                    />
-
-                    <TouchableOpacity
-                      style={styles.actionBtnRed}
-                      onPress={promptOutwardConfirmation}
-                      activeOpacity={0.8}
-                      disabled={adjustLoading}
-                    >
-                      {adjustLoading ? (
-                        <ActivityIndicator size="small" color="#FFF" />
-                      ) : (
-                        <>
-                          <Feather name="arrow-up-circle" size={14} color="#FFF" />
-                          <Text style={styles.actionBtnText}>Deduct from {activeVariant.label} Stock</Text>
-                        </>
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                )}
-
-                {/* History Panel */}
-                {adjustTab === 'history' && (
-                  <ScrollView style={styles.historyPanel} showsVerticalScrollIndicator={false}>
-                    {historyLoading && historyLogs.length === 0 ? (
-                      <ActivityIndicator size="small" color="#7C3AED" style={{ paddingVertical: 20 }} />
-                    ) : historyLogs.length > 0 ? (
-                      <>
-                        {historyLogs.map((log, idx) => (
-                          <View key={log.id || idx} style={styles.historyItem}>
-                            <View
-                              style={[
-                                styles.historyDot,
-                                { backgroundColor: log.type === 'inward' ? '#10B981' : '#EF4444' },
-                              ]}
-                            >
-                              <Feather name={log.type === 'inward' ? 'arrow-down' : 'arrow-up'} size={8} color="#FFF" />
-                            </View>
-                            <View style={{ flex: 1 }}>
-                              <Text style={styles.historyLabel}>
-                                {log.type === 'inward' ? `+${log.boxes} boxes` : `-${log.boxes} boxes`}
-                              </Text>
-                              <Text style={styles.historyRef}>{log.reference}</Text>
-                              {log.performed_by_name && (
-                                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-                                  <Feather name="user" size={12} color="#8B5CF6" style={{ marginRight: 4 }} />
-                                  <Text style={[styles.historyUser, { color: '#8B5CF6', fontSize: 13, fontWeight: '500' }]}>
-                                    {log.performed_by_name}
-                                  </Text>
-                                </View>
-                              )}
-                            </View>
-                            <Text style={styles.historyDate}>
-                              {new Date(log.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                            </Text>
-                          </View>
-                        ))}
-                        {historyHasMore && (
-                          <TouchableOpacity
-                            style={styles.loadMoreBtn}
-                            onPress={() => activeVariant.id && loadVariantHistory(activeVariant.id)}
-                            disabled={historyLoading}
-                          >
-                            {historyLoading ? (
-                              <ActivityIndicator size="small" color="#7C3AED" />
-                            ) : (
-                              <Text style={styles.loadMoreText}>Load More History</Text>
-                            )}
-                          </TouchableOpacity>
+                        {adjustLoading ? (
+                          <ActivityIndicator size="small" color="#FFF" />
+                        ) : (
+                          <>
+                            <Feather name="arrow-down-circle" size={14} color="#FFF" />
+                            <Text style={styles.actionBtnText}>Add to {activeVariant.label} Stock</Text>
+                          </>
                         )}
-                      </>
-                    ) : (
-                      <Text style={styles.emptyText}>No history logs recorded.</Text>
-                    )}
-                  </ScrollView>
-                )}
+                      </TouchableOpacity>
+                    </View>
+                  )}
+
+                  {/* Outward Panel */}
+                  {adjustTab === 'outward' && (
+                    <View style={styles.panelContent}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text style={styles.fieldLabel}>OUTWARD QUANTITY (BOXES)</Text>
+                        {/* Feature #11: MAX Button */}
+                        <TouchableOpacity
+                          style={styles.maxBtn}
+                          onPress={() => {
+                            setOutwardQty(activeVariant.stock.toString());
+                            if (outwardError) setOutwardError(null);
+                          }}
+                        >
+                          <Text style={styles.maxBtnText}>MAX ({activeVariant.stock})</Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      {/* Feature #11: Quantity Stepper */}
+                      <View style={styles.stepperRow}>
+                        <TouchableOpacity
+                          style={styles.stepperBtn}
+                          onPress={() => {
+                            const current = parseInt(outwardQty) || 1;
+                            setOutwardQty(Math.max(1, current - 1).toString());
+                          }}
+                        >
+                          <Feather name="minus" size={16} color="#EF4444" />
+                        </TouchableOpacity>
+
+                        <TextInput
+                          style={[styles.fieldInput, { flex: 1, textAlign: 'center', fontWeight: 'bold' }]}
+                          keyboardType="numeric"
+                          autoFocus
+                          value={outwardQty}
+                          onChangeText={(text) => {
+                            setOutwardQty(text);
+                            if (outwardError) setOutwardError(null);
+                          }}
+                        />
+
+                        <TouchableOpacity
+                          style={styles.stepperBtn}
+                          onPress={() => {
+                            const current = parseInt(outwardQty) || 0;
+                            setOutwardQty(Math.min(activeVariant.stock, current + 1).toString());
+                          }}
+                        >
+                          <Feather name="plus" size={16} color="#EF4444" />
+                        </TouchableOpacity>
+                      </View>
+
+                      {/* Feature #10: Inline Validation Error */}
+                      {outwardError && (
+                        <View style={styles.inlineErrorBox}>
+                          <Feather name="alert-circle" size={12} color="#EF4444" />
+                          <Text style={styles.inlineErrorText}>{outwardError}</Text>
+                        </View>
+                      )}
+
+                      <Text style={styles.fieldLabel}>REASON / REFERENCE</Text>
+                      <TextInput
+                        style={styles.fieldInput}
+                        placeholder="e.g. Bill #TX-1042, Damaged in transit, Transfer"
+                        placeholderTextColor="#A0AEC0"
+                        value={outwardNote}
+                        onChangeText={setOutwardNote}
+                      />
+
+                      <TouchableOpacity
+                        style={styles.actionBtnRed}
+                        onPress={promptOutwardConfirmation}
+                        activeOpacity={0.8}
+                        disabled={adjustLoading}
+                      >
+                        {adjustLoading ? (
+                          <ActivityIndicator size="small" color="#FFF" />
+                        ) : (
+                          <>
+                            <Feather name="arrow-up-circle" size={14} color="#FFF" />
+                            <Text style={styles.actionBtnText}>Deduct from {activeVariant.label} Stock</Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  )}
+
+                  {/* History Panel */}
+                  {adjustTab === 'history' && (
+                    <View style={styles.historyPanel}>
+                      {historyLoading && historyLogs.length === 0 ? (
+                        <ActivityIndicator size="small" color="#7C3AED" style={{ paddingVertical: 20 }} />
+                      ) : historyLogs.length > 0 ? (
+                        <>
+                          {historyLogs.map((log, idx) => (
+                            <View key={log.id || idx} style={styles.historyItem}>
+                              <View
+                                style={[
+                                  styles.historyDot,
+                                  { backgroundColor: log.type === 'inward' ? '#10B981' : '#EF4444' },
+                                ]}
+                              >
+                                <Feather name={log.type === 'inward' ? 'arrow-down' : 'arrow-up'} size={8} color="#FFF" />
+                              </View>
+                              <View style={{ flex: 1 }}>
+                                <Text style={styles.historyLabel}>
+                                  {log.type === 'inward' ? `+${log.boxes} boxes` : `-${log.boxes} boxes`}
+                                </Text>
+                                <Text style={styles.historyRef}>{log.reference}</Text>
+                                {log.performed_by_name && (
+                                  <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                                    <Feather name="user" size={12} color="#8B5CF6" style={{ marginRight: 4 }} />
+                                    <Text style={[styles.historyUser, { color: '#8B5CF6', fontSize: 13, fontWeight: '500' }]}>
+                                      {log.performed_by_name}
+                                    </Text>
+                                  </View>
+                                )}
+                              </View>
+                              <Text style={styles.historyDate}>
+                                {new Date(log.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                              </Text>
+                            </View>
+                          ))}
+                          {historyHasMore && (
+                            <TouchableOpacity
+                              style={styles.loadMoreBtn}
+                              onPress={() => activeVariant.id && loadVariantHistory(activeVariant.id)}
+                              disabled={historyLoading}
+                            >
+                              {historyLoading ? (
+                                <ActivityIndicator size="small" color="#7C3AED" />
+                              ) : (
+                                <Text style={styles.loadMoreText}>Load More History</Text>
+                              )}
+                            </TouchableOpacity>
+                          )}
+                        </>
+                      ) : (
+                        <Text style={styles.emptyText}>No history logs recorded.</Text>
+                      )}
+                    </View>
+                  )}
+                </ScrollView>
               </>
             )}
           </View>
