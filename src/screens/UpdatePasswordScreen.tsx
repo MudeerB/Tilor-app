@@ -1,17 +1,19 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, Keyboard, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, Keyboard, ScrollView, TouchableOpacity } from 'react-native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Input } from '../components/Input';
 import { Button } from '../components/Button';
 import { supabase } from '../services/supabase';
 import { theme } from '../theme/colors';
 import { validatePasswordStrength } from '../utils/authValidation';
+import { activityLogService } from '../services/activityLog';
 
 interface UpdatePasswordScreenProps {
   onSuccess: () => void;
+  onSignOut?: () => void;
 }
 
-export const UpdatePasswordScreen: React.FC<UpdatePasswordScreenProps> = ({ onSuccess }) => {
+export const UpdatePasswordScreen: React.FC<UpdatePasswordScreenProps> = ({ onSuccess, onSignOut }) => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -34,8 +36,35 @@ export const UpdatePasswordScreen: React.FC<UpdatePasswordScreenProps> = ({ onSu
     setLoading(true);
     const { error: updateError } = await supabase.auth.updateUser({ password });
     if (!updateError) {
+      const nowIso = new Date().toISOString();
       try {
         await supabase.rpc('record_password_change');
+      } catch {}
+      try {
+        const { data: authSession } = await supabase.auth.getSession();
+        const uid = authSession?.session?.user?.id;
+        if (uid) {
+          const { data: u } = await supabase
+            .from('users')
+            .update({ password_changed_at: nowIso })
+            .eq('id', uid)
+            .select('shop_id, email, full_name, role')
+            .single();
+
+          if (u?.shop_id) {
+            activityLogService.logActivity({
+              shopId: u.shop_id,
+              userId: uid,
+              userName: u.full_name || u.email,
+              userRole: u.role,
+              entityType: 'user',
+              entityId: uid,
+              entityName: u.full_name || u.email,
+              action: 'password_rotated',
+              details: { reason: 'mandatory_first_login_or_expiry_rotation' },
+            }).catch(() => {});
+          }
+        }
       } catch {}
     }
     setLoading(false);
@@ -101,6 +130,17 @@ export const UpdatePasswordScreen: React.FC<UpdatePasswordScreenProps> = ({ onSu
               loading={loading}
             />
           </View>
+
+          {onSignOut && (
+            <TouchableOpacity
+              onPress={onSignOut}
+              style={styles.signOutBtn}
+              activeOpacity={0.7}
+            >
+              <Feather name="log-out" size={14} color="#C084FC" />
+              <Text style={styles.signOutBtnText}>Cancel & Sign Out</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -174,5 +214,18 @@ const styles = StyleSheet.create({
   },
   btnWrapper: {
     marginTop: 24,
+  },
+  signOutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 16,
+    paddingVertical: 10,
+  },
+  signOutBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#C084FC',
   },
 });

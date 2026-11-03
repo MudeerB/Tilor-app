@@ -41,6 +41,7 @@ export async function signIn(
     });
 
     if (authError) {
+      console.warn('[auth.ts signIn error]', authError.status, authError.message);
       // Map Supabase error messages to user-friendly ones
       if (authError.status === 429) {
         return {

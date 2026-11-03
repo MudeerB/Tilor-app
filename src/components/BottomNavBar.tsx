@@ -3,7 +3,20 @@ import { StyleSheet, Text, View, TouchableOpacity, Platform } from 'react-native
 import { Feather } from '@expo/vector-icons';
 import { hapticFeedback } from '../utils/haptics';
 
-export type NavTab = 'home' | 'estimator' | 'billing' | 'inventory' | 'khatabook' | 'stock_manager' | 'history' | 'customers' | 'settings' | 'analytics' | 'activity_logs' | 'loading_tasks';
+export type NavTab =
+  | 'home'
+  | 'estimator'
+  | 'billing'
+  | 'inventory'
+  | 'khatabook'
+  | 'stock_manager'
+  | 'history'
+  | 'customers'
+  | 'settings'
+  | 'analytics'
+  | 'activity_logs'
+  | 'loading_tasks'
+  | 'superadmin_portal';
 
 interface NavItem {
   key: NavTab;
@@ -12,21 +25,36 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { key: 'home',      label: 'Home',      icon: 'home' },
-  { key: 'estimator', label: 'Estimator', icon: 'grid' },
-  { key: 'billing',   label: 'Billing',   icon: 'file-text' },
-  { key: 'inventory', label: 'Inventory', icon: 'archive' },
-  { key: 'settings',  label: 'Settings',  icon: 'settings' },
+  { key: 'home',              label: 'Home',      icon: 'home' },
+  { key: 'estimator',         label: 'Estimator', icon: 'grid' },
+  { key: 'billing',           label: 'Billing',   icon: 'file-text' },
+  { key: 'inventory',         label: 'Inventory', icon: 'archive' },
+  { key: 'superadmin_portal', label: 'Portal',    icon: 'shield' },
+  { key: 'settings',          label: 'Settings',  icon: 'settings' },
 ];
 
 interface BottomNavBarProps {
   activeTab: NavTab;
   onTabPress: (tab: NavTab) => void;
   isOwner?: boolean;
+  isSuperadmin?: boolean;
 }
 
-export const BottomNavBar: React.FC<BottomNavBarProps> = ({ activeTab, onTabPress, isOwner = true }) => {
-  const visibleItems = NAV_ITEMS.filter(item => {
+export const BottomNavBar: React.FC<BottomNavBarProps> = ({
+  activeTab,
+  onTabPress,
+  isOwner = true,
+  isSuperadmin = false,
+}) => {
+  const visibleItems = NAV_ITEMS.filter((item) => {
+    // Only show Portal tab if user is superadmin
+    if (item.key === 'superadmin_portal') {
+      return isSuperadmin;
+    }
+    if (isSuperadmin) {
+      // Superadmin sees Home, Inventory, Billing, Portal, Settings
+      return item.key !== 'estimator';
+    }
     if (!isOwner) {
       return item.key === 'home' || item.key === 'inventory' || item.key === 'settings';
     }

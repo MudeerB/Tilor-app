@@ -6,7 +6,7 @@ export interface ActivityLogPayload {
   userId?: string | null;
   userName?: string;
   userRole?: string;
-  entityType: 'invoice' | 'product' | 'stock' | 'customer' | 'estimate';
+  entityType: 'invoice' | 'product' | 'stock' | 'customer' | 'estimate' | 'shop' | 'user' | 'admin';
   entityId?: string;
   entityName?: string;
   action: string;

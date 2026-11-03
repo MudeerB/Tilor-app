@@ -10,7 +10,6 @@ import { supabase } from './supabase';
 import { activityLogService } from './activityLog';
 import { dataCache } from './dataCache';
 import { TileCollection, TileVariant, StockLog, VariantType, StockAuditLogItem } from '../types/tiles';
-import { SEED_CATALOG } from '../data/seed-catalog';
 import { escapeLikeWildcards } from '../utils/sanitize';
 import {
   signStockQueuePayload,
@@ -80,7 +79,7 @@ export const catalogService = {
   /**
    * Fetches the full tile catalog for the user's shop from Supabase.
    * Employs high-performance in-memory SWR caching (2 min TTL) with background revalidation.
-   * If DB is empty, seeds default catalog from SEED_CATALOG.
+   * If DB is empty, returns an empty array ([]) so the shop starts from scratch.
    */
   async fetchCatalog(shopId?: string, forceRefresh: boolean = false): Promise<TileCollection[]> {
     // Resolve active shopId if not explicitly passed
@@ -134,7 +133,7 @@ export const catalogService = {
             return parsed;
           }
         }
-        return SEED_CATALOG;
+        return [];
       }
 
       // [SECURITY FIX] Query tile_collections with explicit shop_id filter for defense-in-depth
@@ -152,23 +151,9 @@ export const catalogService = {
       const { data: collections, error: colError } = await query;
 
       if (colError || !collections || collections.length === 0) {
-        // If DB is empty for this shop, attempt initial seed
-        await this.seedInitialCatalog();
-        let retryQuery = supabase
-          .from('tile_collections')
-          .select('*')
-          .eq('is_archived', false);
-
-        if (currentShopId) {
-          retryQuery = retryQuery.eq('shop_id', currentShopId);
-        }
-
-        const { data: retryCols } = await retryQuery;
-
-        if (!retryCols || retryCols.length === 0) {
-          return SEED_CATALOG;
-        }
-        return await this.buildCatalogFromDb(retryCols);
+        // Showroom has no active products; cache empty state and return clean []
+        await AsyncStorage.setItem(cacheKey, JSON.stringify([]));
+        return [];
       }
 
       const catalog = await this.buildCatalogFromDb(collections);
@@ -185,7 +170,7 @@ export const catalogService = {
           return parsed;
         }
       }
-      return SEED_CATALOG;
+      return [];
     }
   },
 
@@ -633,53 +618,6 @@ export const catalogService = {
     }
   },
 
-  /**
-   * Seeds initial catalog from SEED_CATALOG for a newly created shop.
-   */
-  async seedInitialCatalog(): Promise<void> {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      let userId = session?.user?.id;
-      if (!userId) {
-        const { data: { user } } = await supabase.auth.getUser();
-        userId = user?.id;
-      }
-      if (!userId) return;
-
-      const { data: profile } = await supabase
-        .from('users')
-        .select('shop_id')
-        .eq('id', userId)
-        .single();
-
-      if (!profile?.shop_id) return;
-
-      for (const seedTile of SEED_CATALOG) {
-        await this.createProduct(
-          {
-            name: seedTile.name,
-            brand: seedTile.brand,
-            size: seedTile.size,
-            sqftPerBox: seedTile.sqftPerBox,
-            tilesPerBox: seedTile.tilesPerBox,
-            is12x18: seedTile.is12x18,
-            variants: seedTile.variants.map(v => ({
-              type: v.type,
-              label: v.label,
-              pricePerBox: v.pricePerBox,
-              stock: v.stock,
-              color: v.color,
-              accent: v.accent,
-            })),
-          },
-          profile.shop_id,
-          userId
-        );
-      }
-    } catch (err) {
-      console.error('[CatalogService] seedInitialCatalog error:', err);
-    }
-  },
 
   // ─── Offline Queue Helpers ─────────────────────────────────────────────────
 

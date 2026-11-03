@@ -21,12 +21,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NavTab } from '../components/BottomNavBar';
 import { UserSession } from '../services/storage';
 import { TileCollection, StockAuditLogItem } from '../types/tiles';
-import { SEED_CATALOG } from '../data/seed-catalog';
 import { StockManagerSkeleton } from '../components/skeleton';
 import { catalogService } from '../services/catalog';
 import { supabase } from '../services/supabase';
 import { useDebouncedValue } from '../hooks/useDebounce';
 import { hapticFeedback } from '../utils/haptics';
+import { activityLogService } from '../services/activityLog';
+import { dataCache } from '../services/dataCache';
 
 const CATALOG_KEY = 'tilor_tile_catalog';
 const LOGS_PAGE_SIZE = 9;
@@ -236,10 +237,10 @@ export const StockManagerScreen: React.FC<StockManagerScreenProps> = ({
         if (stored) {
           setCatalog(JSON.parse(stored));
         } else {
-          setCatalog(SEED_CATALOG);
+          setCatalog([]);
         }
       } catch {
-        setCatalog(SEED_CATALOG);
+        setCatalog([]);
       }
     } finally {
       setLoading(false);
@@ -365,6 +366,25 @@ export const StockManagerScreen: React.FC<StockManagerScreenProps> = ({
         }
       }
       await AsyncStorage.setItem(catalogCacheKey, JSON.stringify(updatedCatalog));
+      dataCache.invalidate(`catalog_${session.shop_id}`);
+      dataCache.invalidate(`dashboard_metrics_${session.shop_id}`);
+
+      // Log activity
+      activityLogService.logActivity({
+        shopId: session.shop_id,
+        userId: session.id,
+        userName: session.full_name || session.username,
+        userRole: session.role,
+        entityType: 'product',
+        entityId: tileToSave.id,
+        entityName: newName,
+        action: 'product_edited',
+        details: {
+          brand: newBrand,
+          size: newSize,
+          sqftPerBox: newSqft,
+        },
+      }).catch(() => {});
     } catch (err: any) {
       // Rollback on error
       setCatalog(previousCatalog);
@@ -394,6 +414,24 @@ export const StockManagerScreen: React.FC<StockManagerScreenProps> = ({
           .eq('id', tileRemoved.id);
       }
       await AsyncStorage.setItem(catalogCacheKey, JSON.stringify(updated));
+      dataCache.invalidate(`catalog_${session.shop_id}`);
+      dataCache.invalidate(`dashboard_metrics_${session.shop_id}`);
+
+      // Log activity
+      activityLogService.logActivity({
+        shopId: session.shop_id,
+        userId: session.id,
+        userName: session.full_name || session.username,
+        userRole: session.role,
+        entityType: 'product',
+        entityId: tileRemoved.id,
+        entityName: tileRemoved.name,
+        action: 'product_archived',
+        details: {
+          brand: tileRemoved.brand,
+          size: tileRemoved.size,
+        },
+      }).catch(() => {});
     } catch (err: any) {
       // Rollback on error
       setCatalog(previousCatalog);
@@ -486,7 +524,7 @@ export const StockManagerScreen: React.FC<StockManagerScreenProps> = ({
               <View style={styles.roleBadge}>
                 <View style={styles.roleIndicator} />
                 <Text style={styles.roleText}>
-                  {session.role === 'admin' ? 'ADMIN' : session.role === 'owner' ? 'OWNER' : 'STOCK AUDITOR'}
+                  {session.role === 'superadmin' ? 'SUPERADMIN' : session.role === 'admin' ? 'ADMIN' : session.role === 'owner' ? 'OWNER' : 'STOCK AUDITOR'}
                 </Text>
               </View>
             </View>

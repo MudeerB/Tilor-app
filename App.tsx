@@ -4,6 +4,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
 import { AuthProvider, useAuth } from './src/hooks/useSession';
+import { ShopProvider, useShop } from './src/context/ShopContext';
 import { UserSession } from './src/types/auth';
 import { dataCache } from './src/services/dataCache';
 import { LoginScreen } from './src/screens/LoginScreen';
@@ -20,6 +21,8 @@ import { AnalyticsScreen } from './src/screens/AnalyticsScreen';
 import { ActivityLogScreen } from './src/screens/ActivityLogScreen';
 import { LoadingTasksScreen } from './src/screens/LoadingTasksScreen';
 import { UpdatePasswordScreen } from './src/screens/UpdatePasswordScreen';
+import { SuperadminPortalScreen } from './src/screens/SuperadminPortalScreen';
+import { SuperadminTopBar } from './src/components/SuperadminTopBar';
 import { NavTab } from './src/components/BottomNavBar';
 
 function MainApp() {
@@ -32,7 +35,9 @@ function MainApp() {
     setRecoveryMode,
     isPasswordExpired,
     refreshProfile,
+    isSuperadmin,
   } = useAuth();
+  const { activeShop } = useShop();
   const [activeTab, setActiveTab] = useState<NavTab>('home');
   const [visitedTabs, setVisitedTabs] = useState<Set<NavTab>>(() => new Set(['home']));
 
@@ -53,6 +58,7 @@ function MainApp() {
             if (recoveryMode) setRecoveryMode(false);
             if (isPasswordExpired) refreshProfile();
           }}
+          onSignOut={signOut}
         />
       </SafeAreaProvider>
     );
@@ -73,12 +79,13 @@ function MainApp() {
   }
 
   // Build backwards-compatible UserSession object for screens
+  // When logged in as superadmin, shop_id dynamically reflects the active selected shop
   const userSession: UserSession = {
     id: userProfile.id,
     username: userProfile.full_name || userProfile.email.split('@')[0],
     email: userProfile.email,
     role: userProfile.role,
-    shop_id: userProfile.shop_id,
+    shop_id: (userProfile.role === 'superadmin' ? activeShop?.id : userProfile.shop_id) || '',
     full_name: userProfile.full_name,
     time: userProfile.last_login || new Date().toISOString(),
     password_changed_at: userProfile.password_changed_at,
@@ -110,8 +117,22 @@ function MainApp() {
 
   // Route protection
   let currentTab = activeTab;
-  if (userSession.role !== 'owner' && userSession.role !== 'admin') {
-    const restrictedTabs = ['estimator', 'billing', 'khatabook', 'history', 'customers', 'analytics', 'activity_logs', 'stock_manager'];
+  if (
+    userSession.role !== 'owner' &&
+    userSession.role !== 'admin' &&
+    userSession.role !== 'superadmin'
+  ) {
+    const restrictedTabs = [
+      'estimator',
+      'billing',
+      'khatabook',
+      'history',
+      'customers',
+      'analytics',
+      'activity_logs',
+      'stock_manager',
+      'superadmin_portal',
+    ];
     if (restrictedTabs.includes(currentTab)) {
       currentTab = 'home';
     }
@@ -136,6 +157,12 @@ function MainApp() {
   return (
     <SafeAreaProvider>
       <StatusBar style="light" />
+      {isSuperadmin && (
+        <SuperadminTopBar
+          onOpenPortal={() => handleTabChange('superadmin_portal')}
+          isPortalActive={currentTab === 'superadmin_portal'}
+        />
+      )}
       {renderTab('home', DashboardScreen)}
       {renderTab('estimator', EstimatorScreen)}
       {renderTab('billing', BillingScreen)}
@@ -148,6 +175,7 @@ function MainApp() {
       {renderTab('analytics', AnalyticsScreen)}
       {renderTab('activity_logs', ActivityLogScreen)}
       {renderTab('loading_tasks', LoadingTasksScreen)}
+      {renderTab('superadmin_portal', SuperadminPortalScreen)}
     </SafeAreaProvider>
   );
 }
@@ -155,7 +183,9 @@ function MainApp() {
 export default function App() {
   return (
     <AuthProvider>
-      <MainApp />
+      <ShopProvider>
+        <MainApp />
+      </ShopProvider>
     </AuthProvider>
   );
 }
@@ -171,3 +201,4 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 });
+

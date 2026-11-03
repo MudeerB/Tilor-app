@@ -38,7 +38,9 @@ interface AuthContextValue {
   isOwner: boolean;
   /** True if the current user has the 'admin' role. */
   isAdmin: boolean;
-  /** True if the current user has either 'owner' or 'admin' role. */
+  /** True if the current user has the 'superadmin' role. */
+  isSuperadmin: boolean;
+  /** True if the current user has 'owner', 'admin', or 'superadmin' role. */
   isOwnerOrAdmin: boolean;
   /** Refresh the userProfile from the database. */
   refreshProfile: () => Promise<void>;
@@ -57,6 +59,7 @@ const AuthContext = createContext<AuthContextValue>({
   signOut: async () => {},
   isOwner: false,
   isAdmin: false,
+  isSuperadmin: false,
   isOwnerOrAdmin: false,
   refreshProfile: async () => {},
   recoveryMode: false,
@@ -173,8 +176,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const passwordExpired = Boolean(
     userProfile &&
-    userProfile.role === 'staff' &&
-    isPasswordExpired(userProfile.password_changed_at)
+    userProfile.role !== 'superadmin' &&
+    (!userProfile.password_changed_at || isPasswordExpired(userProfile.password_changed_at))
   );
 
   const value: AuthContextValue = {
@@ -184,7 +187,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     signOut: handleSignOut,
     isOwner: userProfile?.role === 'owner',
     isAdmin: userProfile?.role === 'admin',
-    isOwnerOrAdmin: userProfile?.role === 'owner' || userProfile?.role === 'admin',
+    isSuperadmin: userProfile?.role === 'superadmin',
+    isOwnerOrAdmin:
+      userProfile?.role === 'owner' ||
+      userProfile?.role === 'admin' ||
+      userProfile?.role === 'superadmin',
     refreshProfile,
     recoveryMode,
     setRecoveryMode,

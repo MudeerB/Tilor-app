@@ -246,6 +246,7 @@ export const billingService = {
   },
 
   async fetchInvoicesFromDb(shopId: string): Promise<any[]> {
+    if (!shopId || shopId.trim() === '') return [];
     try {
       const { data: dbInvoices, error } = await supabase
         .from('invoices')
@@ -402,6 +403,7 @@ export const billingService = {
   },
 
   async fetchDebtorsFromDb(shopId: string): Promise<any[]> {
+    if (!shopId || shopId.trim() === '') return [];
     try {
       const { data: dbInvoices, error } = await supabase
         .from('invoices')
@@ -563,6 +565,7 @@ export const billingService = {
    * Fetches saved estimate drafts and quotes from Supabase and local storage.
    */
   async fetchEstimates(shopId: string): Promise<any[]> {
+    if (!shopId || shopId.trim() === '') return [];
     try {
       const { data: dbEstimates } = await supabase
         .from('estimates')
@@ -794,6 +797,7 @@ export const billingService = {
   },
 
   async fetchAllCustomersFromDb(shopId: string): Promise<any[]> {
+    if (!shopId || shopId.trim() === '') return [];
     try {
       // Join customers with their invoices and invoice items
       const { data, error } = await supabase
@@ -911,6 +915,16 @@ export const billingService = {
   },
 
   async fetchDashboardMetricsFromDb(shopId: string) {
+    if (!shopId || shopId.trim() === '') {
+      return {
+        todaySales: 0,
+        todayBillsCount: 0,
+        khatabookDue: 0,
+        customersCount: 0,
+        recentActivities: [],
+        pendingDispatchCount: 0,
+      };
+    }
     try {
       const today = new Date();
       today.setHours(0, 0, 0, 0);

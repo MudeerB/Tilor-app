@@ -8,6 +8,7 @@ import {
   StatusBar,
   Alert,
   Switch,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -140,6 +141,27 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   };
 
   const handleLogout = () => {
+    const doLogout = async () => {
+      try {
+        dataCache.clear();
+        const { error } = await supabase.auth.signOut();
+        if (error) {
+          console.warn('[Settings] Supabase sign out notice:', error.message);
+        }
+      } catch (err) {
+        console.warn('[Settings] Supabase sign out exception:', err);
+      } finally {
+        onLogout();
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm('Are you sure you want to sign out?')) {
+        doLogout();
+      }
+      return;
+    }
+
     Alert.alert(
       'Sign Out',
       'Are you sure you want to sign out?',
@@ -148,19 +170,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         {
           text: 'Sign Out',
           style: 'destructive',
-          onPress: async () => {
-            try {
-              dataCache.clear();
-              const { error } = await supabase.auth.signOut();
-              if (error) {
-                console.warn('[Settings] Supabase sign out notice:', error.message);
-              }
-            } catch (err) {
-              console.warn('[Settings] Supabase sign out exception:', err);
-            } finally {
-              onLogout();
-            }
-          },
+          onPress: doLogout,
         },
       ]
     );
@@ -272,7 +282,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     <View
                       style={[
                         styles.roleIndicator,
-                        session.role === 'admin'
+                        session.role === 'superadmin'
+                          ? { backgroundColor: '#C084FC' }
+                          : session.role === 'admin'
                           ? { backgroundColor: '#F59E0B' }
                           : session.role === 'owner'
                           ? { backgroundColor: '#10B981' }
@@ -280,7 +292,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                       ]}
                     />
                     <Text style={styles.rolePillText}>
-                      {session.role === 'admin'
+                      {session.role === 'superadmin'
+                        ? '⚡ Superadmin'
+                        : session.role === 'admin'
                         ? 'Platform Admin'
                         : session.role === 'owner'
                         ? 'Store Owner'
@@ -290,7 +304,15 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   {session.shop_id ? (
                     <View style={styles.shopPill}>
                       <Feather name="home" size={9} color="#E9D5FF" />
-                      <Text style={styles.shopPillText}>Shop #{session.shop_id.slice(0, 6).toUpperCase()}</Text>
+                      <Text style={styles.shopPillText}>
+                        {session.role === 'superadmin' ? 'Active: ' : 'Shop #'}
+                        {session.shop_id.slice(0, 6).toUpperCase()}
+                      </Text>
+                    </View>
+                  ) : session.role === 'superadmin' ? (
+                    <View style={styles.shopPill}>
+                      <Feather name="globe" size={9} color="#E9D5FF" />
+                      <Text style={styles.shopPillText}>Platform-wide</Text>
                     </View>
                   ) : null}
                 </View>
@@ -301,6 +323,25 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
         {/* Main Content Area */}
         <View style={styles.innerContent}>
+
+        {session.role === 'superadmin' && (
+          <>
+            <Text style={styles.sectionHeader}>SUPERADMIN CONTROL CENTER</Text>
+            <View style={styles.settingsCard}>
+              <SettingRow
+                icon="shield"
+                iconBg="#EDE9FE"
+                iconColor="#7C3AED"
+                title="Superadmin Portal"
+                subtitle="Manage showrooms, provision store owners & staff, reset passwords"
+                badge="Master"
+                badgeBg="#F3E8FF"
+                badgeColor="#6D28D9"
+                onPress={() => onTabChange('superadmin_portal')}
+              />
+            </View>
+          </>
+        )}
 
         {/* ═══════════════════════════════════════════════════════════════════ */}
         {/* 1. ACCOUNT & CREDENTIALS                                            */}

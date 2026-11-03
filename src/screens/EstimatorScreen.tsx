@@ -23,7 +23,6 @@ import { UserSession } from '../services/storage';
 import { TileCollection, TileVariant, VariantType } from '../types/tiles';
 import { catalogService } from '../services/catalog';
 import { billingService } from '../services/billing';
-import { SEED_CATALOG } from '../data/seed-catalog';
 import { EstimatorSkeleton } from '../components/skeleton';
 import { hapticFeedback } from '../utils/haptics';
 
@@ -232,7 +231,7 @@ export const EstimatorScreen: React.FC<EstimatorScreenProps> = ({
       if (liveCatalog && liveCatalog.length > 0) {
         setCatalog(liveCatalog);
       } else {
-        setCatalog(SEED_CATALOG);
+        setCatalog([]);
       }
 
       // 2. Load draft from storage
@@ -254,7 +253,7 @@ export const EstimatorScreen: React.FC<EstimatorScreenProps> = ({
       fetchSavedEstimatesList();
     } catch (e) {
       console.error('Error fetching catalog/draft in EstimatorScreen:', e);
-      setCatalog(SEED_CATALOG);
+      setCatalog([]);
     } finally {
       setLoadingCatalog(false);
     }

@@ -98,4 +98,5 @@ Security_Audit/
 backend-implementation-plan.md
 implementation_plan.md
 
-
+# Supabase
+supabase/migrations/

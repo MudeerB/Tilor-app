@@ -287,7 +287,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     const data = await catalogService.fetchCatalog(session.shop_id);
     setCatalog(data);
     setLoading(false);
-  }, []);
+  }, [session.shop_id]);
 
   useEffect(() => {
     loadCatalogData();
@@ -700,7 +700,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
               <Text style={styles.logoText}>Tilor<Text style={styles.logoDot}>.</Text></Text>
             </View>
             <View style={styles.appBarRight}>
-              {session.role === 'owner' && (
+              {(session.role === 'owner' || session.role === 'admin' || session.role === 'superadmin') && (
                 <TouchableOpacity
                   style={styles.addBtn}
                   onPress={() => {
@@ -715,7 +715,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
               )}
               <View style={styles.roleBadge}>
                 <View style={styles.roleIndicator} />
-                <Text style={styles.roleText}>{session.role === 'owner' ? 'OWNER' : 'STAFF'}</Text>
+                <Text style={styles.roleText}>{session.role.toUpperCase()}</Text>
               </View>
             </View>
           </View>

@@ -75,11 +75,6 @@ export interface Customer {
 
 const CUSTOMERS_KEY = 'tilor_customers';
 
-const SEED_CUSTOMERS: Customer[] = [
-  { name: 'Aarav Sharma', phone: '9876543210', address: 'Sector 15, Noida', gstin: '09AAAAA1111A1Z1', history: [] },
-  { name: 'Priya Patel',  phone: '9123456789', address: 'Ghatlodia, Ahmedabad', gstin: '', history: [] },
-  { name: 'Rajesh Kumar', phone: '9988776655', address: 'Connaught Place, Delhi', gstin: '07BBBBB2222B2Z2', history: [] },
-];
 
 type FilterType = 'all' | 'credit' | 'paid';
 type SortType = 'credit_desc' | 'credit_asc' | 'spent_desc' | 'name_asc';

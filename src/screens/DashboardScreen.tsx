@@ -75,6 +75,10 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   const loadDashboardData = useCallback(async () => {
     try {
       if (activeTab !== 'home') return;
+      if (!session.shop_id || session.shop_id.trim() === '') {
+        setLoading(false);
+        return;
+      }
 
       const metrics = await billingService.fetchDashboardMetrics(session.shop_id);
       if (metrics) {
@@ -102,13 +106,23 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
     }
   }, [session.shop_id, activeTab]);
 
-  const isOwner = session.role === 'owner' || session.role === 'admin';
+  const isOwner =
+    session.role === 'owner' ||
+    session.role === 'admin' ||
+    session.role === 'superadmin';
 
   useEffect(() => {
     loadDashboardData();
 
     const hours = new Date().getHours();
-    const roleTitle = session.role === 'admin' ? 'Admin' : isOwner ? 'Owner' : 'Staff';
+    const roleTitle =
+      session.role === 'superadmin'
+        ? 'Superadmin'
+        : session.role === 'admin'
+        ? 'Admin'
+        : isOwner
+        ? 'Owner'
+        : 'Staff';
 
     if (hours < 12) {
       setGreeting(`Good Morning, ${roleTitle}!`);
@@ -124,6 +138,22 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
 
   const handleLogout = () => {
     hapticFeedback.light();
+    const doLogout = async () => {
+      try {
+        await StorageService.clearSession();
+        onLogout();
+      } catch (error) {
+        console.error('Error logging out:', error);
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm('Are you sure you want to log out of Tilor?')) {
+        doLogout();
+      }
+      return;
+    }
+
     Alert.alert(
       'Sign Out',
       'Are you sure you want to log out of Tilor?',
@@ -132,14 +162,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
         {
           text: 'Sign Out',
           style: 'destructive',
-          onPress: async () => {
-            try {
-              await StorageService.clearSession();
-              onLogout();
-            } catch (error) {
-              console.error('Error logging out:', error);
-            }
-          },
+          onPress: doLogout,
         },
       ]
     );
@@ -181,7 +204,13 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
                 <View style={styles.roleBadge}>
                   <View style={styles.roleIndicator} />
                   <Text style={styles.roleText}>
-                    {session.role === 'admin' ? 'ADMIN' : isOwner ? 'OWNER' : 'STAFF'}
+                    {session.role === 'superadmin'
+                      ? 'SUPERADMIN'
+                      : session.role === 'admin'
+                      ? 'ADMIN'
+                      : isOwner
+                      ? 'OWNER'
+                      : 'STAFF'}
                   </Text>
                 </View>
                 <TouchableOpacity
