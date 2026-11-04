@@ -107,6 +107,7 @@ export const SuperadminPortalScreen: React.FC<SuperadminPortalScreenProps> = ({
   const [masterSizes, setMasterSizes] = useState<MasterTileSize[]>([]);
   const [loadingMasterCatalog, setLoadingMasterCatalog] = useState(false);
   const [masterSearchText, setMasterSearchText] = useState('');
+  const [isSizesExpanded, setIsSizesExpanded] = useState(false);
 
   // ── Modals: Master Catalog ────────────────────────────────────
   const [isAddCatModalOpen, setIsAddCatModalOpen] = useState(false);
@@ -761,15 +762,26 @@ export const SuperadminPortalScreen: React.FC<SuperadminPortalScreenProps> = ({
 
   // ── Render ───────────────────────────────────────────────────
   return (
-    <View style={styles.container}>
-      {/* ── Top Header ────────────────────────────────────────── */}
-      <LinearGradient
-        colors={['#0F172A', '#1E1B4B', '#2E1065']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.header}
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.container}
+    >
+      {/* ── Main Scroll Area (Header & Tabs Fixed to Page) ──────── */}
+      <ScrollView
+        style={styles.scrollArea}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
       >
-        <SafeAreaView edges={['top']} style={styles.safeHeader}>
+        {/* ── Top Header ────────────────────────────────────────── */}
+        <LinearGradient
+          colors={['#0F172A', '#1E1B4B', '#2E1065']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.header}
+        >
+          <SafeAreaView edges={['top']} style={styles.safeHeader}>
           {selectedShowroom ? (
             /* ── Drilldown Header (Back Breadcrumb) ── */
             <View style={styles.drilldownHeaderBar}>
@@ -924,12 +936,8 @@ export const SuperadminPortalScreen: React.FC<SuperadminPortalScreenProps> = ({
         </View>
       )}
 
-      {/* ── Main Scroll Area ────────────────────────────────────── */}
-      <ScrollView
-        style={styles.scrollArea}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
+      {/* ── Page Body Content ── */}
+      <View style={styles.scrollBody}>
         {/* ══════════════════════════════════════════════════════════ */}
         {/* VIEW 1: TOP LEVEL HUB SELECTOR (SHOWROOMS VS MASTER)       */}
         {/* ══════════════════════════════════════════════════════════ */}
@@ -941,6 +949,7 @@ export const SuperadminPortalScreen: React.FC<SuperadminPortalScreenProps> = ({
                 hapticFeedback.light();
                 setMainHubTab('showrooms');
               }}
+              activeOpacity={0.8}
             >
               <Feather
                 name="grid"
@@ -952,6 +961,7 @@ export const SuperadminPortalScreen: React.FC<SuperadminPortalScreenProps> = ({
                   styles.hubTabSelectorText,
                   mainHubTab === 'showrooms' && styles.hubTabSelectorTextActive,
                 ]}
+                numberOfLines={1}
               >
                 Showrooms ({shops.length})
               </Text>
@@ -964,6 +974,7 @@ export const SuperadminPortalScreen: React.FC<SuperadminPortalScreenProps> = ({
                 setMainHubTab('master_catalog');
                 loadMasterCatalog();
               }}
+              activeOpacity={0.8}
             >
               <Feather
                 name="layers"
@@ -975,8 +986,9 @@ export const SuperadminPortalScreen: React.FC<SuperadminPortalScreenProps> = ({
                   styles.hubTabSelectorText,
                   mainHubTab === 'master_catalog' && styles.hubTabSelectorTextActive,
                 ]}
+                numberOfLines={1}
               >
-                Master Catalog ({masterSizes.length} Sizes)
+                Master Catalog ({masterSizes.length})
               </Text>
             </TouchableOpacity>
           </View>
@@ -1114,7 +1126,7 @@ export const SuperadminPortalScreen: React.FC<SuperadminPortalScreenProps> = ({
                   activeOpacity={0.8}
                 >
                   <Feather name="plus" size={13} color="#FFFFFF" />
-                  <Text style={styles.primaryActionBtnText}>+ Category</Text>
+                  <Text style={styles.primaryActionBtnText}>Category</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.primaryActionBtn}
@@ -1125,7 +1137,7 @@ export const SuperadminPortalScreen: React.FC<SuperadminPortalScreenProps> = ({
                   activeOpacity={0.8}
                 >
                   <Feather name="plus" size={13} color="#FFFFFF" />
-                  <Text style={styles.primaryActionBtnText}>+ Size</Text>
+                  <Text style={styles.primaryActionBtnText}>Size</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1183,7 +1195,7 @@ export const SuperadminPortalScreen: React.FC<SuperadminPortalScreenProps> = ({
                   </View>
 
                   <View style={{ gap: 8, marginTop: 4 }}>
-                    {masterSizes.map((sz) => (
+                    {(isSizesExpanded ? masterSizes : masterSizes.slice(0, 9)).map((sz) => (
                       <View
                         key={sz.id}
                         style={{
@@ -1232,6 +1244,28 @@ export const SuperadminPortalScreen: React.FC<SuperadminPortalScreenProps> = ({
                         </TouchableOpacity>
                       </View>
                     ))}
+
+                    {masterSizes.length > 9 && (
+                      <TouchableOpacity
+                        style={styles.expandSizesBtn}
+                        onPress={() => {
+                          hapticFeedback.light();
+                          setIsSizesExpanded(!isSizesExpanded);
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <Feather
+                          name={isSizesExpanded ? 'chevron-up' : 'plus'}
+                          size={14}
+                          color="#7C3AED"
+                        />
+                        <Text style={styles.expandSizesBtnText}>
+                          {isSizesExpanded
+                            ? 'Show Less'
+                            : `+${masterSizes.length - 9} More Sizes`}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 </View>
               </>
@@ -1671,6 +1705,7 @@ export const SuperadminPortalScreen: React.FC<SuperadminPortalScreenProps> = ({
             </View>
           </View>
         )}
+        </View>
       </ScrollView>
 
       {/* ════════════════════════════════════════════════════════════ */}
@@ -1683,7 +1718,7 @@ export const SuperadminPortalScreen: React.FC<SuperadminPortalScreenProps> = ({
         onRequestClose={() => setIsCreateShopModalOpen(false)}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalBackdrop}
         >
           <View style={styles.modalContainer}>
@@ -1704,7 +1739,12 @@ export const SuperadminPortalScreen: React.FC<SuperadminPortalScreenProps> = ({
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+            <ScrollView
+              style={styles.modalBody}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ paddingBottom: 24 }}
+            >
               {createShopError && (
                 <View style={styles.errorBanner}>
                   <Feather name="alert-circle" size={15} color="#DC2626" />
@@ -1828,7 +1868,7 @@ export const SuperadminPortalScreen: React.FC<SuperadminPortalScreenProps> = ({
         onRequestClose={() => setIsCreateUserModalOpen(false)}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalBackdrop}
         >
           <View style={styles.modalContainer}>
@@ -1849,7 +1889,12 @@ export const SuperadminPortalScreen: React.FC<SuperadminPortalScreenProps> = ({
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+            <ScrollView
+              style={styles.modalBody}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ paddingBottom: 24 }}
+            >
               {createdUserSuccessData ? (
                 /* Success View: Display temporary credentials to copy */
                 <View style={styles.successCredentialsBox}>
@@ -2106,7 +2151,7 @@ export const SuperadminPortalScreen: React.FC<SuperadminPortalScreenProps> = ({
         onRequestClose={() => setIsEditUserModalOpen(false)}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalBackdrop}
         >
           <View style={styles.modalContainer}>
@@ -2127,7 +2172,12 @@ export const SuperadminPortalScreen: React.FC<SuperadminPortalScreenProps> = ({
               </TouchableOpacity>
             </View>
 
-            <View style={styles.modalBody}>
+            <ScrollView
+              style={styles.modalBody}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ paddingBottom: 24 }}
+            >
               {editUserError && (
                 <View style={styles.errorBanner}>
                   <Feather name="alert-circle" size={15} color="#DC2626" />
@@ -2187,7 +2237,7 @@ export const SuperadminPortalScreen: React.FC<SuperadminPortalScreenProps> = ({
                   </TouchableOpacity>
                 </View>
               </View>
-            </View>
+            </ScrollView>
 
             <View style={styles.modalFooter}>
               <TouchableOpacity
@@ -2228,7 +2278,7 @@ export const SuperadminPortalScreen: React.FC<SuperadminPortalScreenProps> = ({
         onRequestClose={() => setIsResetPassModalOpen(false)}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalBackdrop}
         >
           <View style={styles.modalContainer}>
@@ -2251,7 +2301,12 @@ export const SuperadminPortalScreen: React.FC<SuperadminPortalScreenProps> = ({
               </TouchableOpacity>
             </View>
 
-            <View style={styles.modalBody}>
+            <ScrollView
+              style={styles.modalBody}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ paddingBottom: 24 }}
+            >
               {resetPassSuccess ? (
                 <View style={styles.successCredentialsBox}>
                   <View style={styles.successIconCircle}>
@@ -2321,7 +2376,7 @@ export const SuperadminPortalScreen: React.FC<SuperadminPortalScreenProps> = ({
                   </View>
                 </>
               )}
-            </View>
+            </ScrollView>
 
             <View style={styles.modalFooter}>
               {resetPassSuccess ? (
@@ -2373,7 +2428,7 @@ export const SuperadminPortalScreen: React.FC<SuperadminPortalScreenProps> = ({
         onRequestClose={() => setIsAddCatModalOpen(false)}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalBackdrop}
         >
           <View style={styles.modalContainer}>
@@ -2396,7 +2451,12 @@ export const SuperadminPortalScreen: React.FC<SuperadminPortalScreenProps> = ({
               </TouchableOpacity>
             </View>
 
-            <View style={styles.modalBody}>
+            <ScrollView
+              style={styles.modalBody}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ paddingBottom: 24 }}
+            >
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>CATEGORY NAME *</Text>
                 <TextInput
@@ -2406,7 +2466,7 @@ export const SuperadminPortalScreen: React.FC<SuperadminPortalScreenProps> = ({
                   onChangeText={setNewCatName}
                 />
               </View>
-            </View>
+            </ScrollView>
 
             <View style={styles.modalFooter}>
               <TouchableOpacity
@@ -2447,7 +2507,7 @@ export const SuperadminPortalScreen: React.FC<SuperadminPortalScreenProps> = ({
         onRequestClose={() => setIsAddSizeModalOpen(false)}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalBackdrop}
         >
           <View style={styles.modalContainer}>
@@ -2470,7 +2530,12 @@ export const SuperadminPortalScreen: React.FC<SuperadminPortalScreenProps> = ({
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
+            <ScrollView
+              style={{ flexShrink: 1 }}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ paddingBottom: 24 }}
+            >
               <View style={styles.modalBody}>
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>TILE SIZE LABEL *</Text>
@@ -2595,7 +2660,7 @@ export const SuperadminPortalScreen: React.FC<SuperadminPortalScreenProps> = ({
         isOwner={true}
         isSuperadmin={true}
       />
-    </View>
+    </KeyboardAvoidingView>
   );
 };
 
@@ -2803,6 +2868,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
+    flexGrow: 1,
+    paddingBottom: 40,
+  },
+  scrollBody: {
     padding: 16,
     paddingBottom: 32,
   },
@@ -3587,9 +3656,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 7,
+    gap: 6,
     paddingVertical: 10,
+    paddingHorizontal: 8,
     borderRadius: 10,
+    minHeight: 40,
   },
   hubTabSelectorBtnActive: {
     backgroundColor: '#FFFFFF',
@@ -3600,12 +3671,29 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   hubTabSelectorText: {
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: '700',
     color: '#64748B',
   },
   hubTabSelectorTextActive: {
     color: '#7C3AED',
     fontWeight: '800',
+  },
+  expandSizesBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#F5F3FF',
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+    borderRadius: 12,
+    paddingVertical: 10,
+    marginTop: 6,
+  },
+  expandSizesBtnText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#7C3AED',
   },
 });
