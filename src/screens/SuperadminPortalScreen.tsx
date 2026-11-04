@@ -30,9 +30,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { UserSession, UserProfile, ShopRecord, UserRole } from '../types/auth';
+import { MasterCategory, MasterTileSize } from '../types/tiles';
 import { NavTab, BottomNavBar } from '../components/BottomNavBar';
 import { useShop } from '../context/ShopContext';
 import { adminService } from '../services/adminService';
+import { masterCatalogService } from '../services/masterCatalog';
 import { hapticFeedback } from '../utils/haptics';
 
 interface SuperadminPortalScreenProps {
@@ -98,6 +100,24 @@ export const SuperadminPortalScreen: React.FC<SuperadminPortalScreenProps> = ({
 
   // Showrooms Hub search
   const [searchShopText, setSearchShopText] = useState('');
+
+  // ── Top-Level Hub Navigation (Showrooms vs Master Catalog) ─────
+  const [mainHubTab, setMainHubTab] = useState<'showrooms' | 'master_catalog'>('showrooms');
+  const [masterCategories, setMasterCategories] = useState<MasterCategory[]>([]);
+  const [masterSizes, setMasterSizes] = useState<MasterTileSize[]>([]);
+  const [loadingMasterCatalog, setLoadingMasterCatalog] = useState(false);
+  const [masterSearchText, setMasterSearchText] = useState('');
+
+  // ── Modals: Master Catalog ────────────────────────────────────
+  const [isAddCatModalOpen, setIsAddCatModalOpen] = useState(false);
+  const [newCatName, setNewCatName] = useState('');
+  const [isAddSizeModalOpen, setIsAddSizeModalOpen] = useState(false);
+  const [newSizeLabel, setNewSizeLabel] = useState('');
+  const [newSizeCategoryId, setNewSizeCategoryId] = useState('');
+  const [newSizePieces, setNewSizePieces] = useState('6');
+  const [newSizeSqft, setNewSizeSqft] = useState('9.0');
+  const [newSizeConcept, setNewSizeConcept] = useState(false);
+  const [masterCatalogSubmitting, setMasterCatalogSubmitting] = useState(false);
 
   // ── Showroom Metrics State ───────────────────────────────────
   const [metrics, setMetrics] = useState<ShowroomMetrics | null>(null);
@@ -617,6 +637,113 @@ export const SuperadminPortalScreen: React.FC<SuperadminPortalScreenProps> = ({
     }
   };
 
+  // ── Handlers: Master Catalog (Superadmin Only) ──────────────
+  const loadMasterCatalog = useCallback(async () => {
+    setLoadingMasterCatalog(true);
+    try {
+      const [cats, sizes] = await Promise.all([
+        masterCatalogService.fetchMasterCategories(true),
+        masterCatalogService.fetchMasterSizes(true),
+      ]);
+      setMasterCategories(cats);
+      setMasterSizes(sizes);
+      if (cats.length > 0 && !newSizeCategoryId) {
+        setNewSizeCategoryId(cats[0].id);
+      }
+    } catch (e) {
+      console.warn('Failed to load master catalog', e);
+    } finally {
+      setLoadingMasterCatalog(false);
+    }
+  }, [newSizeCategoryId]);
+
+  useEffect(() => {
+    loadMasterCatalog();
+  }, [loadMasterCatalog]);
+
+  const handleCreateCategory = async () => {
+    if (!newCatName.trim()) return;
+    setMasterCatalogSubmitting(true);
+    const res = await masterCatalogService.createCategory(newCatName.trim(), masterCategories.length + 1);
+    setMasterCatalogSubmitting(false);
+    if (res.success) {
+      hapticFeedback.success();
+      setNewCatName('');
+      setIsAddCatModalOpen(false);
+      loadMasterCatalog();
+    } else {
+      hapticFeedback.error();
+      Alert.alert('Error', res.error || 'Failed to create category.');
+    }
+  };
+
+  const handleDeleteCategory = (cat: MasterCategory) => {
+    const doDelete = async () => {
+      const res = await masterCatalogService.deleteCategory(cat.id);
+      if (res.success) {
+        hapticFeedback.success();
+        loadMasterCatalog();
+      } else {
+        hapticFeedback.error();
+        Alert.alert('Error', res.error || 'Failed to deactivate category.');
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm(`Deactivate master category "${cat.name}"?`)) doDelete();
+    } else {
+      Alert.alert('Deactivate Category', `Deactivate master category "${cat.name}"?`, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Deactivate', style: 'destructive', onPress: doDelete },
+      ]);
+    }
+  };
+
+  const handleCreateSize = async () => {
+    if (!newSizeLabel.trim()) return;
+    setMasterCatalogSubmitting(true);
+    const res = await masterCatalogService.createSize({
+      label: newSizeLabel.trim(),
+      categoryId: newSizeCategoryId || undefined,
+      defaultPiecesPerBox: parseInt(newSizePieces) || 6,
+      defaultSqftPerBox: parseFloat(newSizeSqft) || 9.0,
+      hasConceptVariants: newSizeConcept,
+      displayOrder: masterSizes.length + 1,
+    });
+    setMasterCatalogSubmitting(false);
+    if (res.success) {
+      hapticFeedback.success();
+      setNewSizeLabel('');
+      setIsAddSizeModalOpen(false);
+      loadMasterCatalog();
+    } else {
+      hapticFeedback.error();
+      Alert.alert('Error', res.error || 'Failed to create size.');
+    }
+  };
+
+  const handleDeleteSize = (sz: MasterTileSize) => {
+    const doDelete = async () => {
+      const res = await masterCatalogService.deleteSize(sz.id);
+      if (res.success) {
+        hapticFeedback.success();
+        loadMasterCatalog();
+      } else {
+        hapticFeedback.error();
+        Alert.alert('Error', res.error || 'Failed to deactivate size.');
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm(`Deactivate master size "${sz.label}"?`)) doDelete();
+    } else {
+      Alert.alert('Deactivate Size', `Deactivate master size "${sz.label}"?`, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Deactivate', style: 'destructive', onPress: doDelete },
+      ]);
+    }
+  };
+
   // Role pill styling helper
   const getRoleBadgeStyle = (role: UserRole) => {
     switch (role) {
@@ -804,9 +931,61 @@ export const SuperadminPortalScreen: React.FC<SuperadminPortalScreenProps> = ({
         showsVerticalScrollIndicator={false}
       >
         {/* ══════════════════════════════════════════════════════════ */}
-        {/* VIEW 1: TOP LEVEL SHOWROOMS HUB                            */}
+        {/* VIEW 1: TOP LEVEL HUB SELECTOR (SHOWROOMS VS MASTER)       */}
         {/* ══════════════════════════════════════════════════════════ */}
         {!selectedShowroom && (
+          <View style={styles.hubTabSelectorRow}>
+            <TouchableOpacity
+              style={[styles.hubTabSelectorBtn, mainHubTab === 'showrooms' && styles.hubTabSelectorBtnActive]}
+              onPress={() => {
+                hapticFeedback.light();
+                setMainHubTab('showrooms');
+              }}
+            >
+              <Feather
+                name="grid"
+                size={14}
+                color={mainHubTab === 'showrooms' ? '#7C3AED' : '#64748B'}
+              />
+              <Text
+                style={[
+                  styles.hubTabSelectorText,
+                  mainHubTab === 'showrooms' && styles.hubTabSelectorTextActive,
+                ]}
+              >
+                Showrooms ({shops.length})
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.hubTabSelectorBtn, mainHubTab === 'master_catalog' && styles.hubTabSelectorBtnActive]}
+              onPress={() => {
+                hapticFeedback.light();
+                setMainHubTab('master_catalog');
+                loadMasterCatalog();
+              }}
+            >
+              <Feather
+                name="layers"
+                size={14}
+                color={mainHubTab === 'master_catalog' ? '#7C3AED' : '#64748B'}
+              />
+              <Text
+                style={[
+                  styles.hubTabSelectorText,
+                  mainHubTab === 'master_catalog' && styles.hubTabSelectorTextActive,
+                ]}
+              >
+                Master Catalog ({masterSizes.length} Sizes)
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════ */}
+        {/* VIEW 1A: TENANT SHOWROOMS HUB                              */}
+        {/* ══════════════════════════════════════════════════════════ */}
+        {!selectedShowroom && mainHubTab === 'showrooms' && (
           <View style={styles.sectionWrap}>
             <View style={styles.actionsHeaderRow}>
               <View style={{ flex: 1 }}>
@@ -909,6 +1088,153 @@ export const SuperadminPortalScreen: React.FC<SuperadminPortalScreenProps> = ({
                   </TouchableOpacity>
                 );
               })
+            )}
+          </View>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════ */}
+        {/* VIEW 1B: TOP LEVEL MASTER CATALOG (CATEGORIES & SIZES)     */}
+        {/* ══════════════════════════════════════════════════════════ */}
+        {!selectedShowroom && mainHubTab === 'master_catalog' && (
+          <View style={styles.sectionWrap}>
+            <View style={styles.actionsHeaderRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.sectionTitle}>Master Tile Catalog</Text>
+                <Text style={styles.sectionSub}>
+                  Centrally managed tile categories and sizes used across all showroom inventories.
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <TouchableOpacity
+                  style={[styles.primaryActionBtn, { backgroundColor: '#4F46E5' }]}
+                  onPress={() => {
+                    hapticFeedback.light();
+                    setIsAddCatModalOpen(true);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Feather name="plus" size={13} color="#FFFFFF" />
+                  <Text style={styles.primaryActionBtnText}>+ Category</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.primaryActionBtn}
+                  onPress={() => {
+                    hapticFeedback.light();
+                    setIsAddSizeModalOpen(true);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Feather name="plus" size={13} color="#FFFFFF" />
+                  <Text style={styles.primaryActionBtnText}>+ Size</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {loadingMasterCatalog ? (
+              <ActivityIndicator size="large" color="#7C3AED" style={{ marginVertical: 40 }} />
+            ) : (
+              <>
+                {/* 1. Master Categories Section */}
+                <View style={[styles.card, { marginBottom: 16 }]}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <Text style={styles.cardSectionHeading}>
+                      MASTER CATEGORIES ({masterCategories.length})
+                    </Text>
+                    <Text style={{ fontSize: 11, color: '#64748B' }}>Platform Standard</Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
+                    {masterCategories.map((cat) => (
+                      <View
+                        key={cat.id}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          backgroundColor: '#F3E8FF',
+                          borderColor: '#DDD6FE',
+                          borderWidth: 1,
+                          borderRadius: 20,
+                          paddingHorizontal: 12,
+                          paddingVertical: 6,
+                          gap: 6,
+                        }}
+                      >
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: '#6D28D9' }}>
+                          {cat.name}
+                        </Text>
+                        <TouchableOpacity
+                          onPress={() => handleDeleteCategory(cat)}
+                          hitSlop={8}
+                          accessibilityLabel={`Deactivate ${cat.name}`}
+                        >
+                          <Feather name="x" size={13} color="#7C3AED" />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+
+                {/* 2. Master Tile Sizes Section */}
+                <View style={styles.card}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <Text style={styles.cardSectionHeading}>
+                      STANDARDIZED SIZES & PACKAGING DEFAULTS ({masterSizes.length})
+                    </Text>
+                    <Text style={{ fontSize: 11, color: '#64748B' }}>Curated Dictionary</Text>
+                  </View>
+
+                  <View style={{ gap: 8, marginTop: 4 }}>
+                    {masterSizes.map((sz) => (
+                      <View
+                        key={sz.id}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          paddingVertical: 10,
+                          paddingHorizontal: 12,
+                          backgroundColor: '#F8FAFC',
+                          borderRadius: 12,
+                          borderWidth: 1,
+                          borderColor: '#E2E8F0',
+                        }}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <Text style={{ fontSize: 15, fontWeight: '800', color: '#0F172A' }}>
+                              {sz.label}
+                            </Text>
+                            {sz.category_name && (
+                              <View style={{ backgroundColor: '#EDE9FE', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                                <Text style={{ fontSize: 9, fontWeight: '700', color: '#7C3AED' }}>
+                                  {sz.category_name}
+                                </Text>
+                              </View>
+                            )}
+                            {sz.has_concept_variants && (
+                              <View style={{ backgroundColor: '#FEF3C7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                                <Text style={{ fontSize: 9, fontWeight: '700', color: '#B45309' }}>
+                                  Concept 4-Piece
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+                          <Text style={{ fontSize: 11, color: '#64748B', marginTop: 3 }}>
+                            Packaging Default: {sz.default_pieces_per_box} pcs/box • {sz.default_sqft_per_box} sq.ft/box
+                          </Text>
+                        </View>
+                        <TouchableOpacity
+                          onPress={() => handleDeleteSize(sz)}
+                          hitSlop={8}
+                          style={{ padding: 6, borderRadius: 8, backgroundColor: '#FEF2F2' }}
+                          accessibilityLabel={`Deactivate ${sz.label}`}
+                        >
+                          <Feather name="trash-2" size={14} color="#DC2626" />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              </>
             )}
           </View>
         )}
@@ -2037,6 +2363,231 @@ export const SuperadminPortalScreen: React.FC<SuperadminPortalScreenProps> = ({
         </KeyboardAvoidingView>
       </Modal>
 
+      {/* ════════════════════════════════════════════════════════════ */}
+      {/* MODAL: ADD MASTER CATEGORY                                  */}
+      {/* ════════════════════════════════════════════════════════════ */}
+      <Modal
+        visible={isAddCatModalOpen}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setIsAddCatModalOpen(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalBackdrop}
+        >
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <View style={[styles.modalIconBox, { backgroundColor: '#EDE9FE' }]}>
+                <Feather name="layers" size={18} color="#7C3AED" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalTitle}>Add Master Category</Text>
+                <Text style={styles.modalSubtitle}>
+                  Create a platform-wide category for all showroom catalogs
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setIsAddCatModalOpen(false)}
+                hitSlop={10}
+                style={styles.modalCloseBtn}
+              >
+                <Feather name="x" size={18} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalBody}>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>CATEGORY NAME *</Text>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="e.g. Wooden Planks, Exterior Elevation"
+                  value={newCatName}
+                  onChangeText={setNewCatName}
+                />
+              </View>
+            </View>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => setIsAddCatModalOpen(false)}
+                disabled={masterCatalogSubmitting}
+              >
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.submitBtn}
+                onPress={handleCreateCategory}
+                disabled={masterCatalogSubmitting}
+                activeOpacity={0.8}
+              >
+                {masterCatalogSubmitting ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Feather name="check" size={15} color="#FFFFFF" />
+                    <Text style={styles.submitBtnText}>Create Category</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ════════════════════════════════════════════════════════════ */}
+      {/* MODAL: ADD MASTER TILE SIZE                                 */}
+      {/* ════════════════════════════════════════════════════════════ */}
+      <Modal
+        visible={isAddSizeModalOpen}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setIsAddSizeModalOpen(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalBackdrop}
+        >
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <View style={[styles.modalIconBox, { backgroundColor: '#EDE9FE' }]}>
+                <Feather name="maximize-2" size={18} color="#7C3AED" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalTitle}>Add Master Tile Size</Text>
+                <Text style={styles.modalSubtitle}>
+                  Register a standard size with default packaging suggestions
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setIsAddSizeModalOpen(false)}
+                hitSlop={10}
+                style={styles.modalCloseBtn}
+              >
+                <Feather name="x" size={18} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
+              <View style={styles.modalBody}>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>TILE SIZE LABEL *</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="e.g. 10×20, 800×1600"
+                    value={newSizeLabel}
+                    onChangeText={setNewSizeLabel}
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>LINKED CATEGORY</Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                    {masterCategories.map((c) => {
+                      const isSel = newSizeCategoryId === c.id;
+                      return (
+                        <TouchableOpacity
+                          key={c.id}
+                          style={{
+                            paddingHorizontal: 10,
+                            paddingVertical: 5,
+                            borderRadius: 16,
+                            backgroundColor: isSel ? '#7C3AED' : '#F1F5F9',
+                          }}
+                          onPress={() => setNewSizeCategoryId(c.id)}
+                        >
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: isSel ? '#FFF' : '#475569' }}>
+                            {c.name}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <View style={[styles.inputGroup, { flex: 1 }]}>
+                    <Text style={styles.inputLabel}>DEFAULT PCS / BOX</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      keyboardType="numeric"
+                      value={newSizePieces}
+                      onChangeText={setNewSizePieces}
+                    />
+                  </View>
+                  <View style={[styles.inputGroup, { flex: 1 }]}>
+                    <Text style={styles.inputLabel}>DEFAULT SQ.FT / BOX</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      keyboardType="numeric"
+                      value={newSizeSqft}
+                      onChangeText={setNewSizeSqft}
+                    />
+                  </View>
+                </View>
+
+                <TouchableOpacity
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 8,
+                    backgroundColor: newSizeConcept ? '#FAF5FF' : '#F8FAFC',
+                    borderWidth: 1,
+                    borderColor: newSizeConcept ? '#C4B5FD' : '#E2E8F0',
+                    borderRadius: 10,
+                    padding: 10,
+                    marginTop: 4,
+                  }}
+                  onPress={() => setNewSizeConcept(!newSizeConcept)}
+                >
+                  <Feather
+                    name={newSizeConcept ? 'check-square' : 'square'}
+                    size={16}
+                    color={newSizeConcept ? '#7C3AED' : '#94A3B8'}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#1E293B' }}>
+                      Concept 4-Piece Compatible
+                    </Text>
+                    <Text style={{ fontSize: 10, color: '#64748B' }}>
+                      Enable for wall tiles supporting Light, Dark, Highlighter, Floor sets.
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => setIsAddSizeModalOpen(false)}
+                disabled={masterCatalogSubmitting}
+              >
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.submitBtn}
+                onPress={handleCreateSize}
+                disabled={masterCatalogSubmitting}
+                activeOpacity={0.8}
+              >
+                {masterCatalogSubmitting ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Feather name="check" size={15} color="#FFFFFF" />
+                    <Text style={styles.submitBtnText}>Register Size</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
       {/* ── Bottom Nav ────────────────────────────────────────── */}
       <BottomNavBar
         activeTab={activeTab}
@@ -3022,5 +3573,39 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#7C3AED',
+  },
+  hubTabSelectorRow: {
+    flexDirection: 'row',
+    backgroundColor: '#EEF2F6',
+    borderRadius: 14,
+    padding: 4,
+    marginBottom: 16,
+    gap: 6,
+  },
+  hubTabSelectorBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  hubTabSelectorBtnActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  hubTabSelectorText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  hubTabSelectorTextActive: {
+    color: '#7C3AED',
+    fontWeight: '800',
   },
 });

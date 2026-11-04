@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 import { StorageService } from './storage';
 
@@ -153,7 +154,51 @@ export const activityLogService = {
           validUserId = localSession.id;
         }
       }
-      const validShopId = isValidUUID(payload.shopId) ? payload.shopId : null;
+      let validShopId = isValidUUID(payload.shopId) ? payload.shopId : null;
+
+      // Fallback 1: check local session from StorageService
+      if (!validShopId) {
+        const localSession = await StorageService.getSession().catch(() => null);
+        if (localSession?.shop_id && isValidUUID(localSession.shop_id)) {
+          validShopId = localSession.shop_id;
+        }
+      }
+
+      // Fallback 2: check active shop storage key (used by Superadmin)
+      if (!validShopId) {
+        const savedShopId = await AsyncStorage.getItem('tilor_superadmin_active_shop_id').catch(() => null);
+        if (savedShopId && isValidUUID(savedShopId)) {
+          validShopId = savedShopId;
+        }
+      }
+
+      // Fallback 3: check cached user profile
+      if (!validShopId) {
+        const cachedProfile = await AsyncStorage.getItem('tilor_cached_user_profile').catch(() => null);
+        if (cachedProfile) {
+          try {
+            const parsed = JSON.parse(cachedProfile);
+            if (parsed?.shop_id && isValidUUID(parsed.shop_id)) {
+              validShopId = parsed.shop_id;
+            }
+          } catch {}
+        }
+      }
+
+      // Fallback 4: If stock adjustment and entityId is variant UUID, lookup shop_id from tile_variants
+      if (!validShopId && payload.entityType === 'stock' && payload.entityId && isValidUUID(payload.entityId)) {
+        try {
+          const { data: vRow } = await supabase
+            .from('tile_variants')
+            .select('collection_id, tile_collections(shop_id)')
+            .eq('id', payload.entityId)
+            .maybeSingle();
+          const resolvedShopId = (vRow?.tile_collections as any)?.shop_id;
+          if (resolvedShopId && isValidUUID(resolvedShopId)) {
+            validShopId = resolvedShopId;
+          }
+        } catch {}
+      }
 
       if (!validShopId) {
         console.warn('Skipping activity log: Invalid shopId provided', payload.shopId);

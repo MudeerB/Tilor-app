@@ -53,6 +53,7 @@ function dbToTileCollection(dbCollection: any, dbVariants: any[] = []): TileColl
     shop_id: dbCollection.shop_id,
     name: dbCollection.name,
     brand: dbCollection.brand,
+    category: dbCollection.category || 'Wall Tiles',
     size: dbCollection.size,
     sqftPerBox: Number(dbCollection.sqft_per_box) || 16,
     tilesPerBox: Number(dbCollection.tiles_per_box) || 4,
@@ -60,6 +61,32 @@ function dbToTileCollection(dbCollection: any, dbVariants: any[] = []): TileColl
     is_archived: Boolean(dbCollection.is_archived),
     variants,
   };
+}
+
+async function resolveVariantShopId(shopId?: string, variantId?: string): Promise<string> {
+  if (shopId && shopId !== 'default' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(shopId)) {
+    return shopId;
+  }
+  if (variantId) {
+    try {
+      const { data: vRow } = await supabase
+        .from('tile_variants')
+        .select('collection_id, tile_collections(shop_id)')
+        .eq('id', variantId)
+        .maybeSingle();
+      const resolved = (vRow?.tile_collections as any)?.shop_id;
+      if (resolved && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(resolved)) {
+        return resolved;
+      }
+    } catch {}
+  }
+  try {
+    const saved = await AsyncStorage.getItem('tilor_superadmin_active_shop_id');
+    if (saved && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(saved)) {
+      return saved;
+    }
+  } catch {}
+  return shopId || '';
 }
 
 // ─── Service Methods ──────────────────────────────────────────────────────────
@@ -205,9 +232,11 @@ export const catalogService = {
     userRole?: string
   ): Promise<{ success: boolean; newStock?: number; error?: string }> {
     try {
+      const activeShopId = await resolveVariantShopId(shopId, variantId);
+
       const netState = await NetInfo.fetch();
       if (!netState.isConnected) {
-        await this.queueOfflineAdjustment(shopId, variantId, 'inward', boxes, reference, userId, tileName);
+        await this.queueOfflineAdjustment(activeShopId, variantId, 'inward', boxes, reference, userId, tileName);
         return { success: true };
       }
 
@@ -224,7 +253,7 @@ export const catalogService = {
 
       // Log Activity for Stock Inward
       await activityLogService.logActivity({
-        shopId: shopId,
+        shopId: activeShopId,
         userId: userId,
         userName: userName,
         userRole: userRole,
@@ -239,8 +268,8 @@ export const catalogService = {
         }
       });
 
-      dataCache.invalidate(`catalog_${shopId}`);
-      dataCache.invalidate(`dashboard_metrics_${shopId}`);
+      dataCache.invalidate(`catalog_${activeShopId}`);
+      dataCache.invalidate(`dashboard_metrics_${activeShopId}`);
 
       return { success: true, newStock: Number(data) };
     } catch (err: any) {
@@ -263,9 +292,11 @@ export const catalogService = {
     userRole?: string
   ): Promise<{ success: boolean; newStock?: number; error?: string }> {
     try {
+      const activeShopId = await resolveVariantShopId(shopId, variantId);
+
       const netState = await NetInfo.fetch();
       if (!netState.isConnected) {
-        await this.queueOfflineAdjustment(shopId, variantId, 'outward', boxes, reference, userId, tileName);
+        await this.queueOfflineAdjustment(activeShopId, variantId, 'outward', boxes, reference, userId, tileName);
         return { success: true };
       }
 
@@ -282,7 +313,7 @@ export const catalogService = {
 
       // Log Activity for Stock Outward
       await activityLogService.logActivity({
-        shopId: shopId,
+        shopId: activeShopId,
         userId: userId,
         userName: userName,
         userRole: userRole,
@@ -297,8 +328,8 @@ export const catalogService = {
         }
       });
 
-      dataCache.invalidate(`catalog_${shopId}`);
-      dataCache.invalidate(`dashboard_metrics_${shopId}`);
+      dataCache.invalidate(`catalog_${activeShopId}`);
+      dataCache.invalidate(`dashboard_metrics_${activeShopId}`);
 
       return { success: true, newStock: Number(data) };
     } catch (err: any) {
@@ -314,6 +345,7 @@ export const catalogService = {
     tileData: {
       name: string;
       brand: string;
+      category?: string;
       size: string;
       sqftPerBox: number;
       tilesPerBox: number;
@@ -355,6 +387,7 @@ export const catalogService = {
           shop_id: shopId,
           name: tileData.name.trim(),
           brand: tileData.brand.trim(),
+          category: tileData.category || 'Wall Tiles',
           size: tileData.size,
           sqft_per_box: tileData.sqftPerBox,
           tiles_per_box: tileData.tilesPerBox,

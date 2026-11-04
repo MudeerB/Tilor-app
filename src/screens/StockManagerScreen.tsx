@@ -67,7 +67,7 @@ const TileStockCard = React.memo<TileStockCardProps>(({ col, onEdit, onDelete })
         <View style={{ flex: 1 }}>
           <Text style={styles.productName}>{col.name}</Text>
           <Text style={styles.productBrandSpecs}>
-            {col.brand} • {col.size} • {col.sqftPerBox} sqft/bx
+            {col.brand} • {col.size} • {col.sqftPerBox} sqft/bx • {col.tilesPerBox || (col.is12x18 ? 6 : 4)} pcs/bx
           </Text>
         </View>
         <View style={{ alignItems: 'flex-end' }}>
@@ -208,6 +208,7 @@ export const StockManagerScreen: React.FC<StockManagerScreenProps> = ({
   const [editBrand, setEditBrand]                 = useState('');
   const [editSize, setEditSize]                   = useState('');
   const [editSqft, setEditSqft]                   = useState('');
+  const [editTilesPerBox, setEditTilesPerBox]     = useState('');
   const [editVariantStocks, setEditVariantStocks] = useState<{ [variantType: string]: { stock: string; price: string } }>({});
 
   // Delete Confirm Modal State
@@ -275,6 +276,7 @@ export const StockManagerScreen: React.FC<StockManagerScreenProps> = ({
     setEditBrand(col.brand);
     setEditSize(col.size);
     setEditSqft(col.sqftPerBox.toString());
+    setEditTilesPerBox((col.tilesPerBox || (col.is12x18 ? 6 : 4)).toString());
 
     const initialVariants: { [key: string]: { stock: string; price: string } } = {};
     col.variants.forEach(v => {
@@ -305,6 +307,7 @@ export const StockManagerScreen: React.FC<StockManagerScreenProps> = ({
     const newBrand = editBrand.trim() || tileToSave.brand;
     const newSize = editSize.trim() || tileToSave.size;
     const newSqft = parseFloat(editSqft) || tileToSave.sqftPerBox;
+    const newTilesPerBox = parseInt(editTilesPerBox) || tileToSave.tilesPerBox || 4;
 
     const updatedVariants = tileToSave.variants.map(v => {
       const override = editVariantStocks[v.type];
@@ -328,6 +331,7 @@ export const StockManagerScreen: React.FC<StockManagerScreenProps> = ({
         brand: newBrand,
         size: newSize,
         sqftPerBox: newSqft,
+        tilesPerBox: newTilesPerBox,
         variants: updatedVariants,
       };
     });
@@ -348,6 +352,7 @@ export const StockManagerScreen: React.FC<StockManagerScreenProps> = ({
             brand: newBrand,
             size: newSize,
             sqft_per_box: newSqft,
+            tiles_per_box: newTilesPerBox,
             updated_at: new Date().toISOString(),
           })
           .eq('id', tileToSave.id);
@@ -383,6 +388,7 @@ export const StockManagerScreen: React.FC<StockManagerScreenProps> = ({
           brand: newBrand,
           size: newSize,
           sqftPerBox: newSqft,
+          tilesPerBox: newTilesPerBox,
         },
       }).catch(() => {});
     } catch (err: any) {
@@ -760,8 +766,16 @@ export const StockManagerScreen: React.FC<StockManagerScreenProps> = ({
                 </View>
               </View>
 
-              <Text style={styles.formLabel}>SQFT PER BOX</Text>
-              <TextInput style={styles.formInput} keyboardType="numeric" value={editSqft} onChangeText={setEditSqft} />
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.formLabel}>SQFT PER BOX</Text>
+                  <TextInput style={styles.formInput} keyboardType="numeric" value={editSqft} onChangeText={setEditSqft} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.formLabel}>PIECES PER BOX</Text>
+                  <TextInput style={styles.formInput} keyboardType="numeric" value={editTilesPerBox} onChangeText={setEditTilesPerBox} />
+                </View>
+              </View>
 
               {/* Variant Stock Counts Overrides */}
               <Text style={styles.sectionHeaderLabel}>DIRECT VARIANT STOCK &amp; PRICE ADJUSTMENT</Text>

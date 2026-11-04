@@ -34,15 +34,18 @@ import {
   KeyboardAvoidingView,
   Keyboard,
   Platform,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BottomNavBar, NavTab } from '../components/BottomNavBar';
-import { UserSession, StorageService } from '../services/storage';
-import { TileCollection, TileVariant, VariantType, StockLog } from '../types/tiles';
+import { UserSession } from '../services/storage';
+import { TileCollection, TileVariant, VariantType, StockLog, MasterCategory, MasterTileSize } from '../types/tiles';
 import { catalogService } from '../services/catalog';
+import { masterCatalogService, DEFAULT_MASTER_CATEGORIES, DEFAULT_MASTER_SIZES } from '../services/masterCatalog';
 import { supabase } from '../services/supabase';
 import { SkeletonBox, SkeletonText } from '../components/skeleton';
 import { useDebouncedValue } from '../hooks/useDebounce';
@@ -171,9 +174,18 @@ const TileCard = React.memo<TileCardProps>(({ tile, onPress, onQuickInward }) =>
 
       {/* Info */}
       <View style={styles.tileInfo}>
-        <Text style={styles.tileName} numberOfLines={1}>{tile.name}</Text>
+        <View style={styles.tileNameRow}>
+          <Text style={styles.tileName} numberOfLines={1}>{tile.name}</Text>
+          {tile.category ? (
+            <View style={styles.tileCategoryBadge}>
+              <Text style={styles.tileCategoryText}>{tile.category}</Text>
+            </View>
+          ) : null}
+        </View>
         <Text style={styles.tileBrand}>{tile.brand}</Text>
-        <Text style={styles.tileSpecs}>{tile.size} · {tile.sqftPerBox} sqft/box</Text>
+        <Text style={styles.tileSpecs}>
+          {tile.size} · {tile.sqftPerBox} sqft · {tile.tilesPerBox || (tile.is12x18 ? 6 : 4)} pcs/bx
+        </Text>
 
         {/* 12×18 Variant Badges */}
         {tile.is12x18 && (
@@ -217,9 +229,13 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 }) => {
   const [catalog, setCatalog]                         = useState<TileCollection[]>([]);
   const [loading, setLoading]                         = useState(true);
+  const [refreshing, setRefreshing]                   = useState(false);
   const [search, setSearch]                           = useState('');
   const debouncedSearch = useDebouncedValue(search, 200);
   const [activeSize, setActiveSize]                   = useState('all');
+  const [activeCategory, setActiveCategory]           = useState('all');
+  const [masterCategories, setMasterCategories]       = useState<MasterCategory[]>(DEFAULT_MASTER_CATEGORIES);
+  const [masterSizes, setMasterSizes]                 = useState<MasterTileSize[]>(DEFAULT_MASTER_SIZES);
   const [currentPage, setCurrentPage]                 = useState(1);
   const PAGE_SIZE = 10;
   const [selectedTile, setSelectedTile]               = useState<TileCollection | null>(null);
@@ -228,7 +244,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, activeSize]);
+  }, [search, activeSize, activeCategory]);
 
   // Input states & errors
   const [inwardQty, setInwardQty]                     = useState('10');
@@ -264,7 +280,10 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
   const [addError, setAddError]                     = useState<string | null>(null);
   const [newName, setNewName]                         = useState('');
   const [newBrand, setNewBrand]                       = useState('Kajaria');
+  const [newCategory, setNewCategory]                 = useState('Wall Tiles');
   const [newSize, setNewSize]                         = useState('12×18');
+  const [newPiecesPerBox, setNewPiecesPerBox]         = useState('6');
+  const [newSqftPerBox, setNewSqftPerBox]             = useState('9.0');
   const [newPrice, setNewPrice]                       = useState('');
   const [newStock, setNewStock]                       = useState('50');
   const [lightPrice, setLightPrice]                   = useState('');
@@ -284,10 +303,46 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
   const loadCatalogData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     await catalogService.flushOfflineQueue();
-    const data = await catalogService.fetchCatalog(session.shop_id);
+    const [data, fetchedCats, fetchedSizes] = await Promise.all([
+      catalogService.fetchCatalog(session.shop_id),
+      masterCatalogService.fetchMasterCategories(),
+      masterCatalogService.fetchMasterSizes(),
+    ]);
     setCatalog(data);
+    if (fetchedCats && fetchedCats.length > 0) {
+      setMasterCategories(fetchedCats);
+    }
+    if (fetchedSizes && fetchedSizes.length > 0) {
+      setMasterSizes(fetchedSizes);
+    }
     setLoading(false);
   }, [session.shop_id]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    hapticFeedback.light();
+    try {
+      await catalogService.flushOfflineQueue();
+      const [data, fetchedCats, fetchedSizes] = await Promise.all([
+        catalogService.fetchCatalog(session.shop_id, true),
+        masterCatalogService.fetchMasterCategories(true),
+        masterCatalogService.fetchMasterSizes(true),
+      ]);
+      setCatalog(data);
+      if (fetchedCats && fetchedCats.length > 0) {
+        setMasterCategories(fetchedCats);
+      }
+      if (fetchedSizes && fetchedSizes.length > 0) {
+        setMasterSizes(fetchedSizes);
+      }
+      hapticFeedback.success();
+      showToast('✅ Inventory details refreshed!', 'success');
+    } catch {
+      showToast('Failed to refresh inventory', 'error');
+    } finally {
+      setRefreshing(false);
+    }
+  }, [session.shop_id, showToast]);
 
   useEffect(() => {
     loadCatalogData();
@@ -347,14 +402,16 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     const list = catalog.filter(t => {
       const norm = normalizeSize(t.size);
       const matchesSize = activeSize === 'all' || norm === normalizeSize(activeSize);
+      const matchesCategory = activeCategory === 'all' || (t.category && t.category.toLowerCase() === activeCategory.toLowerCase());
       const matchesSearch =
         !q ||
         t.name.toLowerCase().includes(q) ||
         t.brand.toLowerCase().includes(q) ||
         t.size.toLowerCase().includes(q) ||
+        (t.category && t.category.toLowerCase().includes(q)) ||
         t.id.toLowerCase().includes(q) ||
         t.variants.some(v => v.label.toLowerCase().includes(q) || v.type.toLowerCase().includes(q));
-      return matchesSize && matchesSearch;
+      return matchesSize && matchesCategory && matchesSearch;
     });
 
     // Sort by size (12×18 -> 2×2 -> 2×4 -> others), then by name
@@ -433,19 +490,19 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
     // 2. Background RPC with rollback on error
     try {
-      let userId: string | undefined;
-      let shopId = '';
-      try {
-        const { data: { session: currentSession } } = await supabase.auth.getSession();
-        userId = currentSession?.user?.id;
-        const customSession = await StorageService.getSession();
-        if (customSession) shopId = customSession.shop_id;
-      } catch {}
+      let targetShopId = session.shop_id || selectedTile?.shop_id || '';
+      if (!targetShopId) {
+        try {
+          const savedShopId = await AsyncStorage.getItem('tilor_superadmin_active_shop_id');
+          if (savedShopId) targetShopId = savedShopId;
+        } catch {}
+      }
+      const userId = session.id;
 
       if (targetVariantId) {
         const actorName = session.full_name || session.username || session.email;
         const res = await catalogService.addStock(
-          shopId,
+          targetShopId,
           targetVariantId,
           qty,
           `${activeVariant.label} - ${noteText}`,
@@ -519,19 +576,19 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
     // 2. Background RPC with rollback on error
     try {
-      let userId: string | undefined;
-      let shopId = '';
-      try {
-        const { data: { session: currentSession } } = await supabase.auth.getSession();
-        userId = currentSession?.user?.id;
-        const customSession = await StorageService.getSession();
-        if (customSession) shopId = customSession.shop_id;
-      } catch {}
+      let targetShopId = session.shop_id || selectedTile?.shop_id || '';
+      if (!targetShopId) {
+        try {
+          const savedShopId = await AsyncStorage.getItem('tilor_superadmin_active_shop_id');
+          if (savedShopId) targetShopId = savedShopId;
+        } catch {}
+      }
+      const userId = session.id;
 
       if (targetVariantId) {
         const actorName = session.full_name || session.username || session.email;
         const res = await catalogService.deductStock(
-          shopId,
+          targetShopId,
           targetVariantId,
           confirmQty,
           `${activeVariant.label} - ${noteText}`,
@@ -607,14 +664,18 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       userId = currentSession?.user?.id;
     } catch {}
 
+    const piecesPerBox = parseInt(newPiecesPerBox) || (is12x18Tile ? 6 : 4);
+    const sqftPerBox = parseFloat(newSqftPerBox) || (is12x18Tile ? 9.0 : 16.0);
+
     const actorName = session.full_name || session.username || session.email;
     const res = await catalogService.createProduct(
       {
         name: newName.trim(),
         brand: newBrand.trim() || 'Kajaria',
+        category: newCategory.trim() || 'Wall Tiles',
         size: is12x18Tile ? '12×18' : normalizedSize,
-        sqftPerBox: is12x18Tile ? 12 : 16,
-        tilesPerBox: is12x18Tile ? 8 : 4,
+        sqftPerBox: sqftPerBox,
+        tilesPerBox: piecesPerBox,
         is12x18: is12x18Tile,
         variants: variantsList,
       },
@@ -634,9 +695,10 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
     await loadCatalogData(true);
 
-    showToast(`✅ Registered product "${newName.trim()}" in catalog!`, 'success');
+    showToast(`✅ Registered product "${newName.trim()}" (${piecesPerBox} pcs / ${sqftPerBox} sqft)!`, 'success');
 
     setNewName(''); setNewPrice(''); setNewStock('50');
+    setNewPiecesPerBox('6'); setNewSqftPerBox('9.0');
     setLightPrice(''); setHlPrice(''); setDarkPrice(''); setFlPrice('');
     setAddModalVisible(false);
   };
@@ -683,6 +745,14 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              colors={['#7C3AED']}
+              tintColor="#7C3AED"
+            />
+          }
         >
       {/* Header Banner - Edge-to-Edge */}
       <LinearGradient
@@ -700,6 +770,20 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
               <Text style={styles.logoText}>Tilor<Text style={styles.logoDot}>.</Text></Text>
             </View>
             <View style={styles.appBarRight}>
+              <TouchableOpacity
+                style={styles.headerRefreshBtn}
+                onPress={handleRefresh}
+                activeOpacity={0.7}
+                disabled={refreshing}
+              >
+                {refreshing ? (
+                  <ActivityIndicator size="small" color="#FFF" style={{ transform: [{ scale: 0.75 }] }} />
+                ) : (
+                  <Feather name="refresh-cw" size={12} color="#FFF" />
+                )}
+                <Text style={styles.headerRefreshBtnText}>Refresh</Text>
+              </TouchableOpacity>
+
               {(session.role === 'owner' || session.role === 'admin' || session.role === 'superadmin') && (
                 <TouchableOpacity
                   style={styles.addBtn}
@@ -784,6 +868,27 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
           )}
         </View>
 
+        {/* Category Filter Chips */}
+        {masterCategories.length > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryFilterRow} contentContainerStyle={styles.categoryFilterContent}>
+            {['all', ...masterCategories.map(c => c.name)].map(cat => (
+              <TouchableOpacity
+                key={cat}
+                style={[styles.categoryFilterChip, activeCategory === cat && styles.categoryFilterChipActive]}
+                onPress={() => {
+                  hapticFeedback.selection();
+                  setActiveCategory(cat);
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.categoryFilterChipText, activeCategory === cat && styles.categoryFilterChipTextActive]}>
+                  {cat === 'all' ? 'All Categories' : cat}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
+
         {/* Size Filter & Sort Chips */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsRow} contentContainerStyle={styles.chipsContent}>
           {sizes.map(sz => (
@@ -819,6 +924,20 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
               <>
                 <Text style={styles.emptyTitle}>No products in catalog yet</Text>
                 <Text style={styles.emptySub}>Tap "+ Add" in the top bar to register your first tile product.</Text>
+                <TouchableOpacity
+                  style={styles.clearFilterBtn}
+                  onPress={handleRefresh}
+                  disabled={refreshing}
+                >
+                  {refreshing ? (
+                    <ActivityIndicator size="small" color="#7C3AED" />
+                  ) : (
+                    <>
+                      <Feather name="refresh-cw" size={12} color="#7C3AED" />
+                      <Text style={styles.clearFilterText}>Refresh Catalog</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
               </>
             ) : (
               <>
@@ -831,6 +950,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   onPress={() => {
                     setSearch('');
                     setActiveSize('all');
+                    setActiveCategory('all');
                   }}
                 >
                   <Feather name="refresh-cw" size={12} color="#7C3AED" />
@@ -1300,18 +1420,120 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                 onChangeText={(t) => { setNewBrand(t); if (addError) setAddError(null); }}
               />
 
+              <Text style={styles.fieldLabel}>CATEGORY</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  {masterCategories.map(cat => (
+                    <TouchableOpacity
+                      key={cat.id}
+                      style={[styles.categoryOptionPill, newCategory === cat.name && styles.categoryOptionPillActive]}
+                      onPress={() => setNewCategory(cat.name)}
+                    >
+                      <Text style={[styles.categoryOptionText, newCategory === cat.name && styles.categoryOptionTextActive]}>
+                        {cat.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+
               <Text style={styles.fieldLabel}>TILE SIZE</Text>
-              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
-                {['12×18', '2×2', '2×4', '1×4'].map(sz => (
-                  <TouchableOpacity
-                    key={sz}
-                    style={[styles.sizeOptionPill, newSize === sz && styles.sizeOptionPillActive]}
-                    onPress={() => setNewSize(sz)}
-                  >
-                    <Text style={[styles.sizeOptionText, newSize === sz && styles.sizeOptionTextActive]}>{sz}</Text>
-                  </TouchableOpacity>
-                ))}
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {masterSizes.map(sz => (
+                    <TouchableOpacity
+                      key={sz.id}
+                      style={[styles.sizeOptionPill, newSize === sz.label && styles.sizeOptionPillActive]}
+                      onPress={() => {
+                        setNewSize(sz.label);
+                        setNewPiecesPerBox(sz.default_pieces_per_box.toString());
+                        setNewSqftPerBox(sz.default_sqft_per_box.toString());
+                        if (sz.category_name) {
+                          setNewCategory(sz.category_name);
+                        }
+                      }}
+                    >
+                      <Text style={[styles.sizeOptionText, newSize === sz.label && styles.sizeOptionTextActive]}>{sz.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+
+              {/* ⚡ 1-Tap Variety Shortcuts for 12×18 */}
+              {newSize.includes('12') && newSize.includes('18') && (
+                <View style={styles.packagingShortcutBox}>
+                  <Text style={styles.packagingShortcutTitle}>⚡ PACKAGING VARIETY PRESET</Text>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <TouchableOpacity
+                      style={[
+                        styles.packagingPresetBtn,
+                        newPiecesPerBox === '6' && (newSqftPerBox === '9' || newSqftPerBox === '9.0') && styles.packagingPresetBtnActive
+                      ]}
+                      onPress={() => {
+                        setNewPiecesPerBox('6');
+                        setNewSqftPerBox('9.0');
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[styles.presetBtnTitle, newPiecesPerBox === '6' && (newSqftPerBox === '9' || newSqftPerBox === '9.0') && styles.presetBtnTextActive]}>
+                        6 pcs / 9.0 sqft
+                      </Text>
+                      <Text style={[styles.presetBtnSubtitle, newPiecesPerBox === '6' && (newSqftPerBox === '9' || newSqftPerBox === '9.0') && { color: '#E9D5FF' }]}>
+                        Standard Morbi
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.packagingPresetBtn,
+                        newPiecesPerBox === '5' && (newSqftPerBox === '7.5' || newSqftPerBox === '7.50') && styles.packagingPresetBtnActive
+                      ]}
+                      onPress={() => {
+                        setNewPiecesPerBox('5');
+                        setNewSqftPerBox('7.5');
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[styles.presetBtnTitle, newPiecesPerBox === '5' && (newSqftPerBox === '7.5' || newSqftPerBox === '7.50') && styles.presetBtnTextActive]}>
+                        5 pcs / 7.5 sqft
+                      </Text>
+                      <Text style={[styles.presetBtnSubtitle, newPiecesPerBox === '5' && (newSqftPerBox === '7.5' || newSqftPerBox === '7.50') && { color: '#E9D5FF' }]}>
+                        Lightweight / Export
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
+              {/* Packaging Specifications: Pieces per box & Sq.ft per box */}
+              <View style={styles.packagingRow}>
+                <View style={styles.packagingCol}>
+                  <Text style={styles.fieldLabel}>PIECES / BOX</Text>
+                  <TextInput
+                    style={styles.fieldInput}
+                    keyboardType="numeric"
+                    value={newPiecesPerBox}
+                    onChangeText={setNewPiecesPerBox}
+                    placeholder="e.g. 6"
+                    placeholderTextColor="#A0AEC0"
+                  />
+                </View>
+                <View style={styles.packagingCol}>
+                  <Text style={styles.fieldLabel}>SQ.FT / BOX</Text>
+                  <TextInput
+                    style={styles.fieldInput}
+                    keyboardType="numeric"
+                    value={newSqftPerBox}
+                    onChangeText={setNewSqftPerBox}
+                    placeholder="e.g. 9.0"
+                    placeholderTextColor="#A0AEC0"
+                  />
+                </View>
               </View>
+
+              <Text style={styles.coverageNotice}>
+                📦 1 Box = {newSqftPerBox || '0'} sq.ft ({newPiecesPerBox || '0'} tiles)
+              </Text>
 
               <Text style={styles.fieldLabel}>BASE PRICE PER BOX (₹)</Text>
               <TextInput style={styles.fieldInput} keyboardType="numeric" placeholder="e.g. 850" placeholderTextColor="#A0AEC0" value={newPrice} onChangeText={setNewPrice} />
@@ -1394,7 +1616,24 @@ const styles = StyleSheet.create({
   logoIcon: { width: 34, height: 34, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', marginRight: 9 },
   logoText: { fontSize: 20, fontWeight: '800', color: '#FFF', letterSpacing: -0.5 },
   logoDot: { color: '#C084FC' },
-  appBarRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  appBarRight: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  headerRefreshBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+    paddingHorizontal: 9,
+    paddingVertical: 5.5,
+    borderRadius: 12,
+    gap: 4,
+  },
+  headerRefreshBtnText: {
+    color: '#FFF',
+    fontSize: 10.5,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
   addBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, gap: 4 },
   addBtnText: { color: '#7C3AED', fontSize: 11, fontWeight: 'bold' },
   roleBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.16)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
@@ -1541,8 +1780,32 @@ const styles = StyleSheet.create({
   submitBtn: { flex: 1, borderRadius: 12, overflow: 'hidden' },
   submitBtnGrad: { paddingVertical: 14, alignItems: 'center' },
   submitBtnText: { color: '#FFF', fontWeight: 'bold', fontSize: 13 },
-  sizeOptionPill: { flex: 1, paddingVertical: 8, backgroundColor: '#F8F6FF', borderRadius: 10, alignItems: 'center', borderWidth: 1, borderColor: '#E9D5FF' },
+  sizeOptionPill: { minWidth: 70, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: '#F8F6FF', borderRadius: 10, alignItems: 'center', borderWidth: 1, borderColor: '#E9D5FF' },
   sizeOptionPillActive: { backgroundColor: '#7C3AED', borderColor: '#7C3AED' },
   sizeOptionText: { fontSize: 11, fontWeight: 'bold', color: '#6B7280' },
   sizeOptionTextActive: { color: '#FFF' },
+  tileNameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
+  tileCategoryBadge: { backgroundColor: '#F3E8FF', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  tileCategoryText: { fontSize: 8, fontWeight: '700', color: '#7C3AED' },
+  categoryFilterRow: { marginBottom: 8 },
+  categoryFilterContent: { gap: 6, paddingHorizontal: 2 },
+  categoryFilterChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, backgroundColor: '#FFF', borderWidth: 1, borderColor: '#E9D5FF' },
+  categoryFilterChipActive: { backgroundColor: '#7C3AED', borderColor: '#7C3AED' },
+  categoryFilterChipText: { fontSize: 11, fontWeight: '600', color: '#6B7280' },
+  categoryFilterChipTextActive: { color: '#FFF', fontWeight: '700' },
+  packagingShortcutBox: { backgroundColor: '#F5F3FF', borderWidth: 1, borderColor: '#DDD6FE', borderRadius: 12, padding: 10, marginBottom: 12 },
+  packagingShortcutTitle: { fontSize: 9, fontWeight: '800', color: '#6D28D9', letterSpacing: 0.5, marginBottom: 8 },
+  packagingPresetBtn: { flex: 1, backgroundColor: '#FFF', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 8, borderWidth: 1.5, borderColor: '#DDD6FE', alignItems: 'center' },
+  packagingPresetBtnActive: { backgroundColor: '#7C3AED', borderColor: '#7C3AED' },
+  presetBtnTitle: { fontSize: 11, fontWeight: '800', color: '#5B21B6' },
+  presetBtnTextActive: { color: '#FFF' },
+  presetBtnSubtitle: { fontSize: 9, color: '#6B7280', marginTop: 2 },
+  packagingRow: { flexDirection: 'row', gap: 10, marginBottom: 6 },
+  packagingCol: { flex: 1 },
+  coverageNotice: { fontSize: 10, color: '#6D28D9', backgroundColor: '#EDE9FE', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, alignSelf: 'flex-start', marginBottom: 10, fontWeight: '600' },
+  categoryOptionPill: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, backgroundColor: '#F8F6FF', borderWidth: 1, borderColor: '#E9D5FF' },
+  categoryOptionPillActive: { backgroundColor: '#7C3AED', borderColor: '#7C3AED' },
+  categoryOptionText: { fontSize: 11, fontWeight: '600', color: '#6B7280' },
+  categoryOptionTextActive: { color: '#FFF', fontWeight: '700' },
 });
+

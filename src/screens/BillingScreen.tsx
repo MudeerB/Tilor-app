@@ -38,6 +38,8 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Keyboard,
+  Animated,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -147,6 +149,55 @@ export interface Customer {
 type PaymentMethod = 'cash' | 'card' | 'upi' | 'credit';
 type GstType = 'cgst_sgst' | 'igst' | 'none';
 
+// ─── Toast Component ──────────────────────────────────────────────────────────
+
+interface ToastProps {
+  visible: boolean;
+  message: string;
+  type: 'success' | 'error' | 'warning';
+  onDismiss: () => void;
+}
+
+const Toast: React.FC<ToastProps> = ({ visible, message, type, onDismiss }) => {
+  const translateY = useRef(new Animated.Value(-60)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (visible) {
+      Animated.parallel([
+        Animated.timing(translateY, { toValue: 0, duration: 250, useNativeDriver: false }),
+        Animated.timing(opacity, { toValue: 1, duration: 250, useNativeDriver: false }),
+      ]).start();
+
+      const timer = setTimeout(() => {
+        Animated.parallel([
+          Animated.timing(translateY, { toValue: -60, duration: 200, useNativeDriver: false }),
+          Animated.timing(opacity, { toValue: 0, duration: 200, useNativeDriver: false }),
+        ]).start(() => onDismiss());
+      }, 3000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [visible, message, type, translateY, opacity, onDismiss]);
+
+  if (!visible) return null;
+
+  const bgColor = type === 'success' ? '#10B981' : type === 'error' ? '#EF4444' : '#F59E0B';
+  const iconName = type === 'success' ? 'check-circle' : type === 'error' ? 'alert-triangle' : 'info';
+
+  return (
+    <Animated.View
+      style={[
+        styles.toastContainer,
+        { backgroundColor: bgColor, transform: [{ translateY }], opacity },
+      ]}
+    >
+      <Feather name={iconName} size={16} color="#FFF" />
+      <Text style={styles.toastText} numberOfLines={2}>{message}</Text>
+    </Animated.View>
+  );
+};
+
 interface BillingScreenProps {
   session: UserSession;
   activeTab: NavTab;
@@ -227,6 +278,18 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
     }
   }, [isSharingPdf]);
 
+  // Toast State & Refreshing State
+  const [toast, setToast] = useState<{ visible: boolean; message: string; type: 'success' | 'error' | 'warning' }>({
+    visible: false,
+    message: '',
+    type: 'warning',
+  });
+  const [refreshing, setRefreshing] = useState(false);
+
+  const showToast = useCallback((message: string, type: 'success' | 'error' | 'warning' = 'warning') => {
+    setToast({ visible: true, message, type });
+  }, []);
+
   // Loading & Fulfillment State
   const [requiresLoading, setRequiresLoading] = useState(true);
   const [assignedTo, setAssignedTo] = useState<string>('');
@@ -243,8 +306,8 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
       if (isInitial && catalog.length === 0) {
         setIsInitializing(true);
       }
-      // 1. Fetch Catalog from Supabase (scoped to current shop)
-      const loadedCatalog = await catalogService.fetchCatalog(session.shop_id);
+      // 1. Fetch Catalog from Supabase (scoped to current shop, force fresh)
+      const loadedCatalog = await catalogService.fetchCatalog(session.shop_id, true);
       setCatalog(loadedCatalog);
 
       // 2. Pending Estimate vs Direct Bill Draft (Bug #14)
@@ -318,11 +381,42 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
     }
   }, [session.shop_id, catalog.length, cart.length]);
 
+  const handleRefreshCatalog = useCallback(async () => {
+    setRefreshing(true);
+    hapticFeedback.light();
+    try {
+      const loadedCatalog = await catalogService.fetchCatalog(session.shop_id, true);
+      setCatalog(loadedCatalog);
+      hapticFeedback.success();
+      showToast('✅ Inventory stock refreshed!', 'success');
+    } catch {
+      showToast('Failed to refresh inventory stock', 'error');
+    } finally {
+      setRefreshing(false);
+    }
+  }, [session.shop_id, showToast]);
+
   useEffect(() => {
     if (activeTab === 'billing') {
       loadData(cart.length === 0);
     }
   }, [activeTab, loadData]);
+
+  // Helper to reliably resolve a cart item's live catalog stock
+  const getItemStock = useCallback((item: CartItem): { stock: number; variant: TileVariant | null; collection: TileCollection | null } => {
+    const col = catalog.find(c => c.id === item.tileId || (c.name.trim().toLowerCase() === item.name.trim().toLowerCase() && c.brand.trim().toLowerCase() === item.brand.trim().toLowerCase()));
+    if (!col) return { stock: 0, variant: null, collection: null };
+    const variant = col.variants.find(v => (item.variantId && v.id === item.variantId) || v.type === item.variantType) || col.variants[0];
+    return { stock: Number(variant?.stock) || 0, variant: variant || null, collection: col };
+  }, [catalog]);
+
+  // Derived list of items that exceed inventory stock
+  const overStockItems = useMemo(() => {
+    return cart.filter(item => {
+      const { stock } = getItemStock(item);
+      return item.boxes > stock;
+    });
+  }, [cart, getItemStock]);
 
   // Bug #14: Persist direct cart draft automatically when cart updates
   const updateCartState = (newCart: CartItem[]) => {
@@ -342,15 +436,34 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
     }
 
     const selectedVariant = targetVariant || col.variants[0];
-    const existingIdx = cart.findIndex(c => c.tileId === col.id && c.variantType === selectedVariant.type && !c.roomName);
+    const availableStock = Number(selectedVariant?.stock) || 0;
+
+    if (availableStock <= 0) {
+      showToast(`⚠️ "${col.name} (${selectedVariant?.label || 'Standard'})" is out of stock in inventory!`, 'error');
+      hapticFeedback.error();
+      return;
+    }
+
+    // Match existing item in cart by tileId & variantType (or variantId)
+    const existingIdx = cart.findIndex(c =>
+      c.tileId === col.id &&
+      (c.variantId ? c.variantId === selectedVariant.id : c.variantType === selectedVariant.type)
+    );
 
     if (existingIdx >= 0) {
+      const currentQty = cart[existingIdx].boxes;
+      if (currentQty + 1 > availableStock) {
+        showToast(`⚠️ Stock Limit: Only ${availableStock} boxes available in inventory for ${col.name}.`, 'warning');
+        hapticFeedback.error();
+        return;
+      }
       const updated = [...cart];
       updated[existingIdx].boxes += 1;
       const item = updated[existingIdx];
       item.sqft = Math.round(item.boxes * (item.sqftPerBox || 0) * 10) / 10;
       item.tiles = item.boxes * (item.tilesPerBox || 8);
       updateCartState(updated);
+      showToast(`Added 1 box to ${col.name} (${item.boxes}/${availableStock} bx)`, 'success');
     } else {
       const tilesPerBox = col.tilesPerBox || 8;
       const sqftPerBox = col.sqftPerBox || 0;
@@ -374,6 +487,7 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
         tiles: 1 * tilesPerBox,
       };
       updateCartState([...cart, newItem]);
+      showToast(`Added ${col.name} (${selectedVariant.label}) to cart (1/${availableStock} bx)`, 'success');
     }
     hapticFeedback.light();
     if (!keepSearchOpen) {
@@ -386,21 +500,35 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
   const updateCartQty = (index: number, delta: number) => {
     hapticFeedback.selection();
     const updated = [...cart];
-    const newQty = updated[index].boxes + delta;
+    const item = updated[index];
+    if (!item) return;
+
+    const { stock: availableStock } = getItemStock(item);
+    const newQty = item.boxes + delta;
+
     if (newQty <= 0) {
       updated.splice(index, 1);
-    } else {
-      updated[index].boxes = newQty;
-      const sqftPerBox = updated[index].sqftPerBox || 0;
-      const tilesPerBox = updated[index].tilesPerBox || 8;
-      updated[index].sqft = Math.round(newQty * sqftPerBox * 10) / 10;
-      updated[index].tiles = newQty * tilesPerBox;
+      updateCartState(updated);
+      return;
     }
+
+    if (delta > 0 && newQty > availableStock) {
+      showToast(`⚠️ Stock Limit: Only ${availableStock} boxes available in inventory for ${item.name}.`, 'warning');
+      hapticFeedback.error();
+      return;
+    }
+
+    updated[index].boxes = newQty;
+    const sqftPerBox = updated[index].sqftPerBox || 0;
+    const tilesPerBox = updated[index].tilesPerBox || 8;
+    updated[index].sqft = Math.round(newQty * sqftPerBox * 10) / 10;
+    updated[index].tiles = newQty * tilesPerBox;
     updateCartState(updated);
   };
 
   const handleSetCartItemBoxes = (index: number, text: string) => {
     const updated = [...cart];
+    if (!updated[index]) return;
     if (text === '') {
       updated[index].boxes = 0;
       updated[index].sqft = 0;
@@ -411,15 +539,15 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
     const parsed = parseInt(text.replace(/[^0-9]/g, ''), 10);
     if (!isNaN(parsed)) {
       const item = updated[index];
-      const col = catalog.find(c => c.id === item.tileId);
-      const variant = col?.variants.find(v => v.type === item.variantType) || col?.variants[0];
+      const { stock: availableStock } = getItemStock(item);
 
-      if (variant && parsed > variant.stock && variant.stock > 0) {
-        Alert.alert(
-          'Stock Limit Reached',
-          `Only ${variant.stock} boxes available in stock for ${item.name}.`
+      if (parsed > availableStock) {
+        showToast(
+          `⚠️ Stock Limit: Only ${availableStock} boxes available in inventory for ${item.name}.`,
+          'warning'
         );
-        updated[index].boxes = variant.stock;
+        hapticFeedback.error();
+        updated[index].boxes = availableStock;
       } else {
         updated[index].boxes = parsed;
       }
@@ -451,10 +579,26 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
 
   const handleBlurCartItemBoxes = (index: number) => {
     const updated = [...cart];
-    if (updated[index] && (!updated[index].boxes || updated[index].boxes <= 0)) {
-      updated[index].boxes = 1;
-      updateCartState(updated);
+    const item = updated[index];
+    if (!item) return;
+    const { stock: availableStock } = getItemStock(item);
+
+    if (!item.boxes || item.boxes <= 0) {
+      if (availableStock > 0) {
+        item.boxes = 1;
+      } else {
+        item.boxes = 0;
+        showToast(`⚠️ "${item.name}" has 0 stock in inventory.`, 'warning');
+      }
+    } else if (item.boxes > availableStock) {
+      item.boxes = availableStock;
+      showToast(`⚠️ Clamped to available inventory stock (${availableStock} bx).`, 'warning');
     }
+    const sqftPerBox = item.sqftPerBox || 0;
+    const tilesPerBox = item.tilesPerBox || 8;
+    item.sqft = Math.round(item.boxes * sqftPerBox * 10) / 10;
+    item.tiles = item.boxes * tilesPerBox;
+    updateCartState(updated);
   };
 
   const removeCartItem = (index: number) => {
@@ -703,12 +847,28 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
 
+      {/* Floating Animated Toast Banner */}
+      <Toast
+        visible={toast.visible}
+        message={toast.message}
+        type={toast.type}
+        onDismiss={() => setToast(prev => ({ ...prev, visible: false }))}
+      />
+
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefreshCatalog}
+            tintColor="#FFF"
+            colors={['#7C3AED']}
+          />
+        }
       >
         {/* Header Banner - Edge-to-Edge */}
         <LinearGradient
@@ -728,6 +888,20 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
               </View>
 
               <View style={styles.appBarRight}>
+                <TouchableOpacity
+                  style={styles.refreshBtn}
+                  onPress={handleRefreshCatalog}
+                  activeOpacity={0.7}
+                  disabled={refreshing}
+                >
+                  <Feather
+                    name="refresh-cw"
+                    size={14}
+                    color="#FFF"
+                    style={refreshing ? { transform: [{ rotate: '45deg' }] } : undefined}
+                  />
+                </TouchableOpacity>
+
                 <View style={styles.roleBadge}>
                   <View style={styles.roleIndicator} />
                   <Text style={styles.roleText}>
@@ -860,92 +1034,134 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
             </View>
           ) : (
             <View style={styles.cartList}>
-              {cart.map((item, idx) => (
-                <View key={item.id || idx} style={styles.cartItemCard}>
-                  {/* Top Room Banner Row */}
-                  <View style={styles.cartItemRoomRow}>
-                    <View style={styles.cartItemRoomPill}>
-                      <Feather name="home" size={11} color="#6D28D9" />
-                      <Text style={styles.cartItemRoomText}>
-                        {item.roomName || 'Living Room'}
-                      </Text>
-                    </View>
+              {cart.map((item, idx) => {
+                const { stock: availableStock } = getItemStock(item);
+                const isOverStock = item.boxes > availableStock;
 
-                    {/* View Details Button */}
-                    <TouchableOpacity
-                      style={styles.viewDetailsBtn}
-                      onPress={() => {
-                        hapticFeedback.light();
-                        setCustomRoomText(item.roomName || 'Living Room');
-                        setDetailModalItem({ item, index: idx });
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <Feather name="info" size={11} color="#7C3AED" />
-                      <Text style={styles.viewDetailsBtnText}>View Details</Text>
-                      <Feather name="chevron-right" size={12} color="#7C3AED" />
-                    </TouchableOpacity>
-                  </View>
-
-                  <View style={styles.cartItemTop}>
-                    <View style={[styles.cartItemSwatch, { backgroundColor: item.color }]} />
-                    <View style={{ flex: 1 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Text style={styles.cartItemName}>{item.name}</Text>
-                        {Boolean(item.variantLabel) && (
-                          <View style={{ backgroundColor: '#EDE9FE', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 }}>
-                            <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#6D28D9' }}>{item.variantLabel}</Text>
-                          </View>
-                        )}
+                return (
+                  <View key={item.id || idx} style={[styles.cartItemCard, isOverStock && styles.cartItemCardOverStock]}>
+                    {/* Top Room Banner Row */}
+                    <View style={styles.cartItemRoomRow}>
+                      <View style={styles.cartItemRoomPill}>
+                        <Feather name="home" size={11} color="#6D28D9" />
+                        <Text style={styles.cartItemRoomText}>
+                          {item.roomName || 'Living Room'}
+                        </Text>
                       </View>
-                      <Text style={styles.cartItemSpecs}>
-                        {item.size} · {(item.sqft || (item.boxes * item.sqftPerBox)).toFixed(1)} sq.ft · {item.tiles || (item.boxes * (item.tilesPerBox || 8))} tiles
-                      </Text>
-                      <Text style={styles.cartItemPrice}>₹{item.pricePerBox}/box</Text>
+
+                      {/* View Details Button */}
+                      <TouchableOpacity
+                        style={styles.viewDetailsBtn}
+                        onPress={() => {
+                          hapticFeedback.light();
+                          setCustomRoomText(item.roomName || 'Living Room');
+                          setDetailModalItem({ item, index: idx });
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Feather name="info" size={11} color="#7C3AED" />
+                        <Text style={styles.viewDetailsBtnText}>View Details</Text>
+                        <Feather name="chevron-right" size={12} color="#7C3AED" />
+                      </TouchableOpacity>
                     </View>
 
-                    <TouchableOpacity
-                      onPress={() => removeCartItem(idx)}
-                      style={styles.cartItemDeleteBtn}
-                    >
-                      <Feather name="x" size={16} color="#A0AEC0" />
-                    </TouchableOpacity>
-                  </View>
+                    <View style={styles.cartItemTop}>
+                      <View style={[styles.cartItemSwatch, { backgroundColor: item.color }]} />
+                      <View style={{ flex: 1 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={styles.cartItemName}>{item.name}</Text>
+                          {Boolean(item.variantLabel) && (
+                            <View style={{ backgroundColor: '#EDE9FE', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 }}>
+                              <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#6D28D9' }}>{item.variantLabel}</Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text style={styles.cartItemSpecs}>
+                          {item.size} · {(item.sqft || (item.boxes * item.sqftPerBox)).toFixed(1)} sq.ft · {item.tiles || (item.boxes * (item.tilesPerBox || 8))} tiles
+                        </Text>
+                        <Text style={styles.cartItemPrice}>₹{item.pricePerBox}/box</Text>
+                      </View>
 
-                  <View style={styles.cartItemBottom}>
-                    <View style={styles.qtyCounter}>
                       <TouchableOpacity
-                        style={styles.qtyBtn}
-                        onPress={() => updateCartQty(idx, -1)}
+                        onPress={() => removeCartItem(idx)}
+                        style={styles.cartItemDeleteBtn}
                       >
-                        <Feather name="minus" size={12} color="#6B7280" />
+                        <Feather name="x" size={16} color="#A0AEC0" />
                       </TouchableOpacity>
-                      <View style={styles.qtyInputContainer}>
-                        <TextInput
-                          style={styles.qtyInput}
-                          value={item.boxes === 0 ? '' : item.boxes.toString()}
-                          onChangeText={(text) => handleSetCartItemBoxes(idx, text)}
-                          onBlur={() => handleBlurCartItemBoxes(idx)}
-                          keyboardType="number-pad"
-                          selectTextOnFocus
-                          maxLength={5}
+                    </View>
+
+                    {/* Stock Status Pill & Warning */}
+                    <View style={styles.cartStockStatusRow}>
+                      <View
+                        style={[
+                          styles.cartStockPill,
+                          isOverStock
+                            ? styles.cartStockPillError
+                            : availableStock <= 5
+                            ? styles.cartStockPillLow
+                            : styles.cartStockPillOk,
+                        ]}
+                      >
+                        <Feather
+                          name={isOverStock ? 'alert-circle' : availableStock <= 5 ? 'alert-triangle' : 'package'}
+                          size={11}
+                          color={isOverStock ? '#DC2626' : availableStock <= 5 ? '#D97706' : '#059669'}
                         />
-                        <Text style={styles.qtyUnitLabel}>bx</Text>
+                        <Text
+                          style={[
+                            styles.cartStockBadgeText,
+                            isOverStock
+                              ? styles.cartStockTextError
+                              : availableStock <= 5
+                              ? styles.cartStockTextLow
+                              : styles.cartStockTextOk,
+                          ]}
+                        >
+                          {availableStock > 0 ? `Inventory: ${availableStock} bx available` : 'Out of Stock (0 bx in inventory)'}
+                        </Text>
                       </View>
-                      <TouchableOpacity
-                        style={styles.qtyBtn}
-                        onPress={() => updateCartQty(idx, 1)}
-                      >
-                        <Feather name="plus" size={12} color="#6B7280" />
-                      </TouchableOpacity>
+                      {isOverStock && (
+                        <Text style={styles.cartOverStockText}>
+                          ⚠️ Exceeds stock by {item.boxes - availableStock} bx!
+                        </Text>
+                      )}
                     </View>
 
-                    <Text style={styles.cartItemSubtotal}>
-                      ₹{(item.boxes * item.pricePerBox).toLocaleString('en-IN')}
-                    </Text>
+                    <View style={styles.cartItemBottom}>
+                      <View style={styles.qtyCounter}>
+                        <TouchableOpacity
+                          style={styles.qtyBtn}
+                          onPress={() => updateCartQty(idx, -1)}
+                        >
+                          <Feather name="minus" size={12} color="#6B7280" />
+                        </TouchableOpacity>
+                        <View style={[styles.qtyInputContainer, isOverStock && styles.qtyInputContainerError]}>
+                          <TextInput
+                            style={[styles.qtyInput, isOverStock && { color: '#DC2626' }]}
+                            value={item.boxes === 0 ? '' : item.boxes.toString()}
+                            onChangeText={(text) => handleSetCartItemBoxes(idx, text)}
+                            onBlur={() => handleBlurCartItemBoxes(idx)}
+                            keyboardType="number-pad"
+                            selectTextOnFocus
+                            maxLength={5}
+                          />
+                          <Text style={[styles.qtyUnitLabel, isOverStock && { color: '#DC2626' }]}>bx</Text>
+                        </View>
+                        <TouchableOpacity
+                          style={[styles.qtyBtn, item.boxes >= availableStock && styles.qtyBtnDisabled]}
+                          onPress={() => updateCartQty(idx, 1)}
+                        >
+                          <Feather name="plus" size={12} color={item.boxes >= availableStock ? '#CBD5E1' : '#6B7280'} />
+                        </TouchableOpacity>
+                      </View>
+
+                      <Text style={styles.cartItemSubtotal}>
+                        ₹{(item.boxes * item.pricePerBox).toLocaleString('en-IN')}
+                      </Text>
+                    </View>
                   </View>
-                </View>
-              ))}
+                );
+              })}
             </View>
           )}
 
@@ -1029,24 +1245,48 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
 
           {/* Checkout CTA */}
           {cart.length > 0 && (
-            <TouchableOpacity
-              style={styles.checkoutBtn}
-              onPress={() => {
-                setCheckoutError(null);
-                setCheckoutVisible(true);
-              }}
-              activeOpacity={0.8}
-            >
-              <LinearGradient
-                colors={['#7C3AED', '#9333EA']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.checkoutGrad}
+            <>
+              {overStockItems.length > 0 && (
+                <View style={styles.stockAlertBanner}>
+                  <Feather name="alert-triangle" size={16} color="#DC2626" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.stockAlertBannerTitle}>Insufficient Inventory Stock</Text>
+                    <Text style={styles.stockAlertBannerSub}>
+                      {overStockItems.map(i => `${i.name} (req: ${i.boxes} bx, stock: ${getItemStock(i).stock} bx)`).join(', ')}
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              <TouchableOpacity
+                style={[styles.checkoutBtn, overStockItems.length > 0 && { opacity: 0.65 }]}
+                onPress={() => {
+                  if (overStockItems.length > 0) {
+                    hapticFeedback.error();
+                    showToast(
+                      `Cannot checkout: ${overStockItems[0].name} exceeds available stock (${getItemStock(overStockItems[0]).stock} bx).`,
+                      'error'
+                    );
+                    return;
+                  }
+                  setCheckoutError(null);
+                  setCheckoutVisible(true);
+                }}
+                activeOpacity={0.8}
               >
-                <Feather name="file-text" size={18} color="#FFF" />
-                <Text style={styles.checkoutText}>Generate &amp; Save Invoice</Text>
-              </LinearGradient>
-            </TouchableOpacity>
+                <LinearGradient
+                  colors={['#7C3AED', '#9333EA']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.checkoutGrad}
+                >
+                  <Feather name="file-text" size={18} color="#FFF" />
+                  <Text style={styles.checkoutText}>
+                    {overStockItems.length > 0 ? 'Fix Stock Quantities to Proceed' : 'Generate & Save Invoice'}
+                  </Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </>
           )}
 
         </View>
@@ -1085,16 +1325,19 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
               {variantPickerTile?.variants.map(v => (
                 <TouchableOpacity
                   key={v.type}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    backgroundColor: '#F8F6FF',
-                    borderRadius: 14,
-                    padding: 12,
-                    borderWidth: 1,
-                    borderColor: '#E9D5FF',
-                    gap: 12,
-                  }}
+                  style={[
+                    {
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      backgroundColor: v.stock > 0 ? '#F8F6FF' : '#F8FAFC',
+                      borderRadius: 14,
+                      padding: 12,
+                      borderWidth: 1,
+                      borderColor: v.stock > 0 ? '#E9D5FF' : '#E2E8F0',
+                      gap: 12,
+                    },
+                    v.stock <= 0 && { opacity: 0.55 },
+                  ]}
                   onPress={() => variantPickerTile && handleAddTileToCart(variantPickerTile, v)}
                   activeOpacity={0.7}
                 >
@@ -1748,6 +1991,11 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({
                         <Feather name="check" size={11} color="#166534" />
                         <Text style={styles.inCartIndicatorText}>{inCartCount} in cart</Text>
                       </View>
+                    ) : totalStock <= 0 && !tile.is12x18 ? (
+                      <View style={[styles.addBtnModal, { backgroundColor: '#F1F5F9', borderWidth: 1, borderColor: '#E2E8F0' }]}>
+                        <Feather name="slash" size={11} color="#94A3B8" />
+                        <Text style={[styles.addBtnModalText, { color: '#94A3B8' }]}>Out</Text>
+                      </View>
                     ) : (
                       <View style={styles.addBtnModal}>
                         <Feather name="plus" size={13} color="#FFF" />
@@ -2040,4 +2288,115 @@ const styles = StyleSheet.create({
   specDetailRowVal: { fontSize: 11, color: '#0F172A', fontWeight: '700' },
   specDoneBtn: { backgroundColor: '#7C3AED', paddingVertical: 12, borderRadius: 14, alignItems: 'center' },
   specDoneBtnText: { color: '#FFF', fontSize: 13, fontWeight: '800' },
+
+  // Floating Toast Banner
+  toastContainer: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 50 : 20,
+    left: 20,
+    right: 20,
+    zIndex: 9999,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 8,
+    gap: 10,
+  },
+  toastText: {
+    color: '#FFF',
+    fontSize: 13,
+    fontWeight: '600',
+    flex: 1,
+  },
+  refreshBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cartItemCardOverStock: {
+    borderColor: '#FCA5A5',
+    backgroundColor: '#FFFBFB',
+  },
+  cartStockStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 6,
+    marginBottom: 4,
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  cartStockPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  cartStockPillOk: {
+    backgroundColor: '#ECFDF5',
+  },
+  cartStockPillLow: {
+    backgroundColor: '#FFFBEB',
+  },
+  cartStockPillError: {
+    backgroundColor: '#FEF2F2',
+  },
+  cartStockBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  cartStockTextOk: {
+    color: '#047857',
+  },
+  cartStockTextLow: {
+    color: '#B45309',
+  },
+  cartStockTextError: {
+    color: '#DC2626',
+  },
+  cartOverStockText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
+  qtyInputContainerError: {
+    borderColor: '#EF4444',
+    backgroundColor: '#FEF2F2',
+  },
+  qtyBtnDisabled: {
+    opacity: 0.35,
+  },
+  stockAlertBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 14,
+    gap: 10,
+  },
+  stockAlertBannerTitle: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#DC2626',
+  },
+  stockAlertBannerSub: {
+    fontSize: 11,
+    color: '#991B1B',
+    marginTop: 2,
+    lineHeight: 16,
+  },
 });
