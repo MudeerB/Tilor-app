@@ -405,7 +405,9 @@ export const LoadingTasksScreen: React.FC<LoadingTasksScreenProps> = ({
               </View>
               <View style={styles.roleBadgeHeader}>
                 <View style={styles.roleIndicator} />
-                <Text style={styles.roleText}>{session.role === 'owner' ? 'OWNER' : 'STAFF'}</Text>
+                <Text style={styles.roleText}>
+                  {session.role === 'superadmin' ? 'SUPERADMIN' : session.role === 'admin' ? 'ADMIN' : session.role === 'owner' ? 'OWNER' : 'STAFF'}
+                </Text>
               </View>
             </View>
             <View style={styles.pageTitleRow}>

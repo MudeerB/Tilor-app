@@ -896,7 +896,9 @@ export const EstimatorScreen: React.FC<EstimatorScreenProps> = ({
             </View>
             <View style={styles.roleBadge}>
               <View style={styles.roleIndicator} />
-              <Text style={styles.roleText}>{session.role === 'owner' ? 'OWNER' : 'STAFF'}</Text>
+              <Text style={styles.roleText}>
+                {session.role === 'superadmin' ? 'SUPERADMIN' : session.role === 'admin' ? 'ADMIN' : session.role === 'owner' ? 'OWNER' : 'STAFF'}
+              </Text>
             </View>
           </View>
 

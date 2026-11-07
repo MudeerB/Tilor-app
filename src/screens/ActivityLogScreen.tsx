@@ -40,20 +40,36 @@ export const ActivityLogScreen: React.FC<ActivityLogScreenProps> = ({ session, o
   const debouncedSearch = useDebouncedValue(searchQuery, 200);
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 7;
+  const isSuperadmin = session.role === 'superadmin';
+  const [superadminScope, setSuperadminScope] = useState<'current' | 'all'>('current');
 
   const loadLogs = async (isRefreshing = false) => {
     if (!isRefreshing) setLoading(true);
     try {
+      // Tenant shop users (owner, admin, staff) MUST ONLY query session.shop_id.
+      // Superadmins can toggle between active showroom and all showrooms.
+      const targetShopId = isSuperadmin
+        ? (superadminScope === 'all' ? undefined : (session.shop_id || undefined))
+        : session.shop_id;
+
+      if (!targetShopId && !isSuperadmin) {
+        setSecurityLogs([]);
+        setLogs([]);
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
+
       if (filter === 'security') {
         const fetchedSec = await activityLogService.fetchSecurityAuditLogs(
-          session.role === 'admin' ? undefined : session.shop_id,
+          targetShopId,
           50,
           0
         );
         setSecurityLogs(fetchedSec);
       } else {
         const fetchedLogs = await activityLogService.fetchLogs(
-          session.role === 'admin' ? undefined : session.shop_id,
+          targetShopId,
           50,
           0,
           filter === 'all' ? undefined : { entityType: filter }
@@ -71,7 +87,7 @@ export const ActivityLogScreen: React.FC<ActivityLogScreenProps> = ({ session, o
   useEffect(() => {
     loadLogs();
     setCurrentPage(1);
-  }, [filter]);
+  }, [filter, superadminScope, session.shop_id]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -176,7 +192,7 @@ export const ActivityLogScreen: React.FC<ActivityLogScreenProps> = ({ session, o
               <View style={[styles.severityBadge, { backgroundColor: bg, borderColor: color }]}>
                 <Text style={[styles.severityBadgeText, { color }]}>{sec.severity}</Text>
               </View>
-              {session.role === 'admin' && (
+              {isSuperadmin && superadminScope === 'all' && (
                 <View style={styles.shopBadge}>
                   <Text style={styles.shopBadgeText}>Shop: {sec.shop_id.slice(0, 8)}</Text>
                 </View>
@@ -208,7 +224,7 @@ export const ActivityLogScreen: React.FC<ActivityLogScreenProps> = ({ session, o
           <Feather name={icon} size={20} color={color} />
         </View>
         <View style={styles.logContent}>
-          {session.role === 'admin' && (
+          {isSuperadmin && superadminScope === 'all' && (
             <View style={[styles.shopBadge, { marginBottom: 4 }]}>
               <Text style={styles.shopBadgeText}>Shop: {act.shop_id.slice(0, 8)}</Text>
             </View>
@@ -232,7 +248,7 @@ export const ActivityLogScreen: React.FC<ActivityLogScreenProps> = ({ session, o
     'invoice',
     'stock',
     'product',
-    ...(session.role === 'owner' || session.role === 'admin' ? (['security'] as const) : []),
+    ...(session.role === 'owner' || session.role === 'admin' || session.role === 'superadmin' ? (['security'] as const) : []),
   ], [session.role]);
 
   const renderFooter = () => {
@@ -289,7 +305,9 @@ export const ActivityLogScreen: React.FC<ActivityLogScreenProps> = ({ session, o
 
             <View style={styles.roleBadge}>
               <View style={styles.roleIndicator} />
-              <Text style={styles.roleText}>{session.role === 'admin' ? 'ADMIN' : session.role === 'owner' ? 'OWNER' : 'STAFF'}</Text>
+              <Text style={styles.roleText}>
+                {session.role === 'superadmin' ? 'SUPERADMIN' : session.role === 'admin' ? 'ADMIN' : session.role === 'owner' ? 'OWNER' : 'STAFF'}
+              </Text>
             </View>
           </View>
 
@@ -302,6 +320,33 @@ export const ActivityLogScreen: React.FC<ActivityLogScreenProps> = ({ session, o
               <Text style={styles.countBadgeText}>{activeItems.length} events logged</Text>
             </View>
           </View>
+
+          {/* Superadmin Cross-Showroom Scope Toggle */}
+          {isSuperadmin && (
+            <View style={styles.scopeToggleRow}>
+              <TouchableOpacity
+                style={[styles.scopeToggleBtn, superadminScope === 'current' && styles.scopeToggleBtnActive]}
+                onPress={() => setSuperadminScope('current')}
+                activeOpacity={0.8}
+              >
+                <Feather name="home" size={12} color={superadminScope === 'current' ? '#7C3AED' : '#E9D5FF'} />
+                <Text style={[styles.scopeToggleText, superadminScope === 'current' && styles.scopeToggleTextActive]}>
+                  Active Showroom
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.scopeToggleBtn, superadminScope === 'all' && styles.scopeToggleBtnActive]}
+                onPress={() => setSuperadminScope('all')}
+                activeOpacity={0.8}
+              >
+                <Feather name="globe" size={12} color={superadminScope === 'all' ? '#7C3AED' : '#E9D5FF'} />
+                <Text style={[styles.scopeToggleText, superadminScope === 'all' && styles.scopeToggleTextActive]}>
+                  All Showrooms
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* Search Bar */}
           <View style={styles.searchContainer}>
@@ -666,5 +711,34 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     color: '#6D28D9',
+  },
+  scopeToggleRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  scopeToggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  scopeToggleBtnActive: {
+    backgroundColor: '#FFF',
+    borderColor: '#FFF',
+  },
+  scopeToggleText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#E9D5FF',
+  },
+  scopeToggleTextActive: {
+    color: '#7C3AED',
   },
 });

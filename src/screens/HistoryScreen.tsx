@@ -884,7 +884,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
                 <View style={styles.roleBadge}>
                   <View style={styles.roleIndicator} />
                   <Text style={styles.roleText}>
-                    {session.role === 'owner' ? 'OWNER' : 'STAFF'}
+                    {session.role === 'superadmin' ? 'SUPERADMIN' : session.role === 'admin' ? 'ADMIN' : session.role === 'owner' ? 'OWNER' : 'STAFF'}
                   </Text>
                 </View>
                 <TouchableOpacity style={styles.logoutBtn} onPress={onLogout} activeOpacity={0.7}>
@@ -1347,7 +1347,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
                 )}
               </TouchableOpacity>
 
-              {selectedInvoice && !selectedInvoice.isVoided && session.role === 'owner' && (
+              {selectedInvoice && !selectedInvoice.isVoided && (session.role === 'owner' || session.role === 'superadmin') && (
                 <TouchableOpacity
                   style={styles.modalVoidBtn}
                   onPress={() => handleVoidInvoice(selectedInvoice)}

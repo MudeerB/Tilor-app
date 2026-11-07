@@ -600,7 +600,9 @@ Thank you for your business!
               </TouchableOpacity>
               <View style={styles.roleBadge}>
                 <View style={styles.roleIndicator} />
-                <Text style={styles.roleText}>{session.role === 'owner' ? 'OWNER' : 'STAFF'}</Text>
+                <Text style={styles.roleText}>
+                  {session.role === 'superadmin' ? 'SUPERADMIN' : session.role === 'admin' ? 'ADMIN' : session.role === 'owner' ? 'OWNER' : 'STAFF'}
+                </Text>
               </View>
               <TouchableOpacity style={styles.logoutBtn} onPress={onLogout} activeOpacity={0.7}>
                 <Feather name="log-out" size={15} color="#FFF" />

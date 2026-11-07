@@ -163,17 +163,18 @@ export const catalogService = {
         return [];
       }
 
-      // [SECURITY FIX] Query tile_collections with explicit shop_id filter for defense-in-depth
+      // [SECURITY FIX] Fail-closed: Must provide a valid shop_id
+      if (!currentShopId || currentShopId.trim() === '') {
+        return [];
+      }
+
       let query = supabase
         .from('tile_collections')
         .select('*')
+        .eq('shop_id', currentShopId)
         .eq('is_archived', false)
         .order('brand', { ascending: true })
         .order('name', { ascending: true });
-
-      if (currentShopId) {
-        query = query.eq('shop_id', currentShopId);
-      }
 
       const { data: collections, error: colError } = await query;
 
@@ -516,7 +517,11 @@ export const catalogService = {
         }
       }
 
-      const cacheLogsKey = currentShopId ? `tilor_stock_logs_${currentShopId}` : 'tilor_stock_logs';
+      if (!currentShopId || currentShopId.trim() === '') {
+        return [];
+      }
+
+      const cacheLogsKey = `tilor_stock_logs_${currentShopId}`;
 
       const netState = await NetInfo.fetch();
       if (!netState.isConnected) {
@@ -557,7 +562,7 @@ export const catalogService = {
         });
       });
 
-      // 2. Query public.stock_logs with user metadata and relations
+      // 2. Query public.stock_logs with user metadata and relations scoped to current showroom
       let query = supabase
         .from('stock_logs')
         .select(`
@@ -572,12 +577,12 @@ export const catalogService = {
             full_name,
             email
           ),
-          tile_variants (
+          tile_variants!inner (
             id,
             variant_type,
             label,
             collection_id,
-            tile_collections (
+            tile_collections!inner (
               id,
               name,
               brand,
@@ -586,6 +591,7 @@ export const catalogService = {
             )
           )
         `)
+        .eq('tile_variants.tile_collections.shop_id', currentShopId)
         .order('created_at', { ascending: false });
 
       if (logType) {

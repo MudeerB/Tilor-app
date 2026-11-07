@@ -401,7 +401,7 @@ export const CustomersScreen: React.FC<CustomersScreenProps> = ({
                 <View style={styles.roleBadge}>
                   <View style={styles.roleIndicator} />
                   <Text style={styles.roleText}>
-                    {session.role === 'owner' ? 'OWNER' : 'STAFF'}
+                    {session.role === 'superadmin' ? 'SUPERADMIN' : session.role === 'admin' ? 'ADMIN' : session.role === 'owner' ? 'OWNER' : 'STAFF'}
                   </Text>
                 </View>
                 <TouchableOpacity style={styles.logoutBtn} onPress={onLogout} activeOpacity={0.7}>

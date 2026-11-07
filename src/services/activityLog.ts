@@ -274,17 +274,35 @@ export const activityLogService = {
     filters?: {
       userId?: string;
       entityType?: string;
+    },
+    options?: {
+      allowCrossTenant?: boolean;
     }
   ): Promise<ActivityLog[]> {
     try {
+      // Defense-in-depth: If shopId is omitted and caller has not opted into cross-tenant, fail closed
+      let effectiveShopId = shopId;
+      if (!effectiveShopId || effectiveShopId === '') {
+        if (!options?.allowCrossTenant) {
+          const localSession = await StorageService.getSession().catch(() => null);
+          if (localSession?.role !== 'superadmin') {
+            if (localSession?.shop_id && isValidUUID(localSession.shop_id)) {
+              effectiveShopId = localSession.shop_id;
+            } else {
+              return [];
+            }
+          }
+        }
+      }
+
       let query = supabase
         .from('activity_logs')
         .select('*')
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1);
 
-      if (shopId && shopId !== 'all' && isValidUUID(shopId)) {
-        query = query.eq('shop_id', shopId);
+      if (effectiveShopId && effectiveShopId !== 'all' && isValidUUID(effectiveShopId)) {
+        query = query.eq('shop_id', effectiveShopId);
       }
       if (filters?.userId && isValidUUID(filters.userId)) {
         query = query.eq('user_id', filters.userId);
@@ -327,24 +345,41 @@ export const activityLogService = {
   },
 
   /**
-   * Fetches security audit logs for Owners (shop-scoped) or Admins (cross-tenant).
+   * Fetches security audit logs for Owners (shop-scoped) or Superadmins (cross-tenant).
    * Resolves the actual account name of the actor responsible for each event.
    */
   async fetchSecurityAuditLogs(
     shopId?: string,
     limit: number = 50,
     offset: number = 0,
-    severity?: 'HIGH' | 'CRITICAL'
+    severity?: 'HIGH' | 'CRITICAL',
+    options?: {
+      allowCrossTenant?: boolean;
+    }
   ): Promise<SecurityAuditLog[]> {
     try {
+      let effectiveShopId = shopId;
+      if (!effectiveShopId || effectiveShopId === '') {
+        if (!options?.allowCrossTenant) {
+          const localSession = await StorageService.getSession().catch(() => null);
+          if (localSession?.role !== 'superadmin') {
+            if (localSession?.shop_id && isValidUUID(localSession.shop_id)) {
+              effectiveShopId = localSession.shop_id;
+            } else {
+              return [];
+            }
+          }
+        }
+      }
+
       let query = supabase
         .from('security_audit_logs')
         .select('*')
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1);
 
-      if (shopId && shopId !== 'all' && isValidUUID(shopId)) {
-        query = query.eq('shop_id', shopId);
+      if (effectiveShopId && effectiveShopId !== 'all' && isValidUUID(effectiveShopId)) {
+        query = query.eq('shop_id', effectiveShopId);
       }
       if (severity) {
         query = query.eq('severity', severity);

@@ -503,7 +503,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             subtitle="Remove temporary offline drafts &amp; cached records from this device"
             onPress={handleClearLocalCache}
           />
-          {session.role === 'admin' && (
+          {session.role === 'superadmin' && (
             <>
               <View style={styles.divider} />
               <SettingRow

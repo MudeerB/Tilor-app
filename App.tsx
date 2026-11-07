@@ -117,6 +117,12 @@ function MainApp() {
 
   // Route protection
   let currentTab = activeTab;
+
+  // Superadmin Portal is strictly accessible only to superadmin accounts
+  if (currentTab === 'superadmin_portal' && userSession.role !== 'superadmin') {
+    currentTab = 'home';
+  }
+
   if (
     userSession.role !== 'owner' &&
     userSession.role !== 'admin' &&
